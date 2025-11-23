@@ -1,0 +1,11 @@
+# Build artifacts
+SpacePigeon.app/
+SpacePigeon.zip
+*.icns
+*.png
+*.o
+*.dSYM/
+
+# OS files
+.DS_Store
+
