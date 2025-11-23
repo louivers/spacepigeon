@@ -75,9 +75,10 @@ swiftc launcher.swift -o "$MACOS/launcher"
 echo "📦 Copying Lua scripts..."
 cp init.lua layout.lua space_utils.lua workspaces.lua config.lua "$RESOURCES/"
 
-# 6. Ad-Hoc Code Signing
+# 6. Ad-Hoc Signing (Minimum for M1+)
 echo "✍️  Signing app (Ad-Hoc)..."
-codesign --force --deep --sign - "$APP_DIR"
+# Simple ad-hoc signing for the binary. Required for Apple Silicon.
+codesign --force --sign - "$MACOS/launcher"
 
 # 7. Zip it for distribution (using ditto for better macOS compatibility)
 echo "🤐 Zipping into ${APP_NAME}.zip..."

@@ -1,6 +1,7 @@
 import Cocoa
+import Foundation
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
     var window: NSWindow!
     var statusLabel: NSTextField!
     var installButton: NSButton!
@@ -100,6 +101,101 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.performInstall()
         }
     }
+    
+    // URLSession Delegate to follow redirects
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(request)
+    }
+
+    func downloadAndInstallHammerspoon(statusUpdater: @escaping (String) -> Void) -> (Bool, String?) {
+        statusUpdater("Downloading Hammerspoon...")
+        
+        // Fallback to specific version URL if "latest" redirect fails
+        // Using 0.9.100 release asset directly which is robust
+        guard let url = URL(string: "https://github.com/Hammerspoon/hammerspoon/releases/download/0.9.100/Hammerspoon-0.9.100.zip") else {
+            return (false, "Invalid URL")
+        }
+        
+        // Use User's Applications folder (~/Applications)
+        let userApps = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+        
+        // Create ~/Applications if it doesn't exist
+        if !FileManager.default.fileExists(atPath: userApps.path) {
+            do {
+                try FileManager.default.createDirectory(at: userApps, withIntermediateDirectories: true, attributes: nil)
+            } catch {
+                return (false, "Could not create ~/Applications: \(error.localizedDescription)")
+            }
+        }
+        
+        // Destination zip path: ~/Applications/Hammerspoon.zip
+        let zipPath = userApps.appendingPathComponent("Hammerspoon.zip")
+        let appPath = userApps.appendingPathComponent("Hammerspoon.app")
+
+        let downloadGroup = DispatchGroup()
+        downloadGroup.enter()
+        
+        var success = false
+        var errorMsg: String? = nil
+        
+        // Configure session to follow redirects
+        let config = URLSessionConfiguration.default
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        
+        let task = session.downloadTask(with: url) { location, response, error in
+            if let error = error {
+                errorMsg = "Download failed: \(error.localizedDescription)"
+            } else if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                errorMsg = "HTTP Error: \(httpResponse.statusCode)"
+            } else if let location = location {
+                do {
+                    // Validate size (avoid 0 byte error pages)
+                    let attr = try FileManager.default.attributesOfItem(atPath: location.path)
+                    if let size = attr[.size] as? Int64, size < 1000 {
+                         errorMsg = "Download too small (\(size) bytes). Likely blocked or invalid URL."
+                    } else {
+                        // Remove old zip if exists
+                        if FileManager.default.fileExists(atPath: zipPath.path) {
+                            try FileManager.default.removeItem(at: zipPath)
+                        }
+                        try FileManager.default.moveItem(at: location, to: zipPath)
+                        success = true
+                    }
+                } catch {
+                    errorMsg = "File move error: \(error.localizedDescription)"
+                }
+            }
+            downloadGroup.leave()
+        }
+        task.resume()
+        
+        downloadGroup.wait()
+        
+        if !success { return (false, errorMsg ?? "Download failed") }
+        
+        statusUpdater("Unzipping Hammerspoon...")
+        
+        // Use NSWorkspace to unzip via Archive Utility (Native, Trusted, Robust)
+        if !NSWorkspace.shared.open(zipPath) {
+             return (false, "Failed to open zip file with System Archive Utility")
+        }
+        
+        // Wait for Hammerspoon.app to appear (Timeout 30s)
+        var tries = 0
+        let maxTries = 60
+        while !FileManager.default.fileExists(atPath: appPath.path) && tries < maxTries {
+            Thread.sleep(forTimeInterval: 0.5)
+            tries += 1
+        }
+        
+        if FileManager.default.fileExists(atPath: appPath.path) {
+             // Cleanup zip
+             try? FileManager.default.removeItem(at: zipPath)
+             return (true, nil)
+        } else {
+             return (false, "Unzip timed out. Please unzip ~/Applications/Hammerspoon.zip manually.")
+        }
+    }
 
     func performInstall() {
         let fileManager = FileManager.default
@@ -119,21 +215,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "\(home.path)/Applications/Hammerspoon.app"
         ]
         
-        let hsInstalled = hsApps.contains { fileManager.fileExists(atPath: $0) }
+        var hsInstalled = hsApps.contains { fileManager.fileExists(atPath: $0) }
         
         if !hsInstalled {
-            DispatchQueue.main.async {
-                self.progressBar.stopAnimation(nil)
-                self.progressBar.isHidden = true
-                self.installButton.isEnabled = true
-                self.statusLabel.stringValue = "Error: Hammerspoon not found."
-                let alert = NSAlert()
-                alert.messageText = "Hammerspoon Missing"
-                alert.informativeText = "Please install Hammerspoon from hammerspoon.org first."
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
+            // Auto-install Hammerspoon
+            let (installed, errorMsg) = downloadAndInstallHammerspoon(statusUpdater: updateStatus)
+            if !installed {
+                DispatchQueue.main.async {
+                    self.progressBar.stopAnimation(nil)
+                    self.progressBar.isHidden = true
+                    self.installButton.isEnabled = true
+                    self.statusLabel.stringValue = "Error: \(errorMsg ?? "Unknown error")"
+                    let alert = NSAlert()
+                    alert.messageText = "Installation Failed"
+                    alert.informativeText = "Could not download Hammerspoon automatically.\n\nReason: \(errorMsg ?? "Unknown")\n\nPlease install it manually from hammerspoon.org."
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+                return
             }
-            return
+            hsInstalled = true
         }
 
         // 2. Create Directory
@@ -175,10 +276,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let hsApp = runningApps.first { $0.bundleIdentifier == "org.hammerspoon.Hammerspoon" }
         
         if hsApp != nil {
-            // Hammerspoon IS running. Reload config using AppleScript without activating.
-            // Note: 'tell application "Hammerspoon"' might activate it if not careful,
-            // but usually only if we ask for UI.
-            
+            // Hammerspoon IS running. Reload config using AppleScript.
             let source = """
             tell application "Hammerspoon"
                 execute lua code "hs.reload()"
@@ -193,9 +291,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else {
             // Hammerspoon is NOT running. Launch it.
-            // This will likely open its Console or Dock icon depending on user prefs.
             if let url = workspace.urlForApplication(withBundleIdentifier: "org.hammerspoon.Hammerspoon") {
                 workspace.open(url)
+            } else if let userUrl = workspace.urlForApplication(withBundleIdentifier: "org.hammerspoon.Hammerspoon") {
+                 // Fallback check if urlForApplication finds it in user dir
+                 workspace.open(userUrl)
+            } else {
+                // Manual launch from user apps if workspace doesn't see it yet
+                let userAppPath = home.appendingPathComponent("Applications/Hammerspoon.app")
+                workspace.open(userAppPath)
             }
         }
 
