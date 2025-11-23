@@ -1,0 +1,123 @@
+local spaces = require("hs.spaces")
+local app    = require("hs.application")
+local spaceUtils = require("space_utils")
+
+local M = {}
+
+-- Wait until an app has a main window, then call callback(win)
+local function waitForMainWindow(appName, callback)
+  local tries    = 0
+  local maxTries = 40  -- 10 seconds
+  local t
+
+  t = hs.timer.doEvery(0.25, function()
+    local a   = app.get(appName)
+    local win = a and a:mainWindow()
+
+    if win then
+      t:stop()
+      callback(win)
+    else
+      tries = tries + 1
+      if tries >= maxTries then
+        t:stop()
+        hs.alert.show("No window for " .. appName)
+        callback(nil)
+      end
+    end
+  end)
+end
+
+-- Layout application (single-phase with verification + retries)
+-- For each entry { name = "App", space = 1 }, we:
+--  1) goto that space
+--  2) launch app
+--  3) wait for window
+--  4) verify window is in that space
+--  5) if not, kill app and retry (up to maxAttempts)
+function M.applyLayoutWithChecks(layout, done)
+  local index = 1
+
+  local function nextApp()
+    if index > #layout then
+      if done then done() end
+      return
+    end
+
+    local entry = layout[index]
+    index = index + 1
+
+    local s = spaceUtils.getSpaces()
+    local spaceId = s[entry.space]
+    if not spaceId then
+      hs.alert.show("Missing space index " .. tostring(entry.space) .. " for " .. entry.name)
+      nextApp()
+      return
+    end
+
+    local maxAttempts = 3
+
+    local function placeApp(attempt)
+      attempt = attempt or 1
+      if attempt > maxAttempts then
+        hs.alert.show("Failed to place " .. entry.name .. " in space " .. tostring(entry.space))
+        nextApp()
+        return
+      end
+
+      -- 1. Go to target space and wait
+      spaceUtils.gotoSpaceAndWait(spaceId)
+
+      -- 2. Launch/focus the app
+      hs.application.launchOrFocus(entry.name)
+
+      -- 3. Wait for main window
+      waitForMainWindow(entry.name, function(win)
+        if not win then
+          -- retry from scratch
+          placeApp(attempt + 1)
+          return
+        end
+
+        -- small extra wait so macOS finishes assigning space
+        hs.timer.doAfter(0.5, function()
+          local ws = spaces.windowSpaces(win) or {}
+          local inTarget = false
+          for _, sid in ipairs(ws) do
+            if sid == spaceId then
+              inTarget = true
+              break
+            end
+          end
+
+          if inTarget then
+            -- Maximize on its screen and focus
+            local scr = win:screen()
+            if scr then
+              win:setFrame(scr:frame())
+            end
+            win:focus()
+            nextApp()
+          else
+            -- Kill app and try again in this space
+            local a = win:application()
+            if a then
+              a:kill9()
+              hs.timer.doAfter(1.0, function()
+                placeApp(attempt + 1)
+              end)
+            else
+              placeApp(attempt + 1)
+            end
+          end
+        end)
+      end)
+    end
+
+    placeApp(1)
+  end
+
+  nextApp()
+end
+
+return M
