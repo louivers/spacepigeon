@@ -2,6 +2,7 @@ local app    = require("hs.application")
 local hotkey = require("hs.hotkey")
 local spaceUtils = require("space_utils")
 local layout     = require("layout")
+local config     = require("config")
 
 local M = {}
 
@@ -119,59 +120,14 @@ local function setupWorkspace(modeName, targetSpaces, layoutConfig)
   end)
 end
 
-local presets = {
-  phd = {
-    name   = "PhD",
-    spaces = 9,
-    layout = {
-      { name = "Brave Browser", space = 1 },
-      { name = "Zotero",        space = 2 },
-      { name = "Obsidian",      space = 3 },
-      { name = "Mattermost",    space = 4 },
-      { name = "Mail",          space = 5 },
-      { name = "Calendar",      space = 6 },
-      -- 7 intentionally left empty
-      { name = "Marta",         space = 8 },
-      { name = "Spotify",       space = 9 },
-    },
-  },
-  chill = {
-    name   = "Chill",
-    spaces = 4,
-    layout = {
-      { name = "Brave Browser", space = 1 },
-      -- 2 and 3 empty
-      { name = "Marta",         space = 4 },
-    },
-  },
-  casualCoding = {
-    name   = "Casual Coding",
-    spaces = 5,
-    layout = {
-      { name = "Brave Browser", space = 1 },
-      { name = "Cursor",        space = 2 },
-      -- 3 empty on purpose
-      { name = "Marta",         space = 4 },
-      { name = "Spotify",       space = 5 },
-    },
-  },
-}
-
 local function bindWorkspaceHotkeys()
-  local bindings = {
-    { mods = {"cmd", "alt", "ctrl"}, key = "P", preset = presets.phd },
-    { mods = {"cmd", "alt", "ctrl"}, key = "C", preset = presets.chill },
-    { mods = {"cmd", "alt", "ctrl"}, key = "D", preset = presets.casualCoding },
-  }
-
-  for _, binding in ipairs(bindings) do
+  for _, binding in ipairs(config.bindings) do
     hotkey.bind(binding.mods, binding.key, function()
       setupWorkspace(binding.preset.name, binding.preset.spaces, binding.preset.layout)
     end)
   end
 end
 
-M.presets = presets
 M.setupWorkspace = setupWorkspace
 M.bindWorkspaceHotkeys = bindWorkspaceHotkeys
 

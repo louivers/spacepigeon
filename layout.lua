@@ -28,8 +28,26 @@ local function waitForMainWindow(appName, callback)
   end)
 end
 
+local function applyWindowPosition(win, pos)
+  local scr = win:screen()
+  if not scr then return end
+  
+  local f = scr:frame()
+  
+  if not pos or pos == "max" then
+    win:setFrame(f)
+  elseif pos == "left" then
+    f.w = f.w / 2
+    win:setFrame(f)
+  elseif pos == "right" then
+    f.x = f.x + (f.w / 2)
+    f.w = f.w / 2
+    win:setFrame(f)
+  end
+end
+
 -- Layout application (single-phase with verification + retries)
--- For each entry { name = "App", space = 1 }, we:
+-- For each entry { name = "App", space = 1, pos = "left" }, we:
 --  1) goto that space
 --  2) launch app
 --  3) wait for window
@@ -91,11 +109,8 @@ function M.applyLayoutWithChecks(layout, done)
           end
 
           if inTarget then
-            -- Maximize on its screen and focus
-            local scr = win:screen()
-            if scr then
-              win:setFrame(scr:frame())
-            end
+            -- Apply positioning and focus
+            applyWindowPosition(win, entry.pos)
             win:focus()
             nextApp()
           else
