@@ -1,28 +1,43 @@
-# SpacePigeon: Saved Workspaces for macOS (Hammerspoon-based)
+# SpacePigeon: Saved Workspaces for macOS
 
-**SpacePigeon** lets you define *workspaces* for macOS — which apps open, which desktop spaces they go to, and how windows are arranged — using a lightweight Hammerspoon configuration.
+**SpacePigeon** is a native macOS app (powered by Hammerspoon) that lets you define *workspaces* — which apps open, which desktop spaces they go to, and how windows are arranged.
 
 ## Features
-- Open specific apps into specific macOS Spaces
-- Auto-arrange windows
-- Trigger workspaces via hotkeys
-- Written entirely in Hammerspoon Lua
-- Lightweight and open-source
+- 🚀 **One-Click Setup**: Installs everything automatically via a native macOS App.
+- 🖥 **Workspace Automation**: Opens specific apps into specific Spaces and arranges them.
+- ⚡️ **Hotkeys**: Trigger layouts instantly.
+- 🛠 **Customizable**: Written in Lua, easily editable via the app.
 
 ## Installation
-1. Install [Hammerspoon](https://www.hammerspoon.org/)
-2. Copy the repository contents (including `init.lua` and the helper modules) into your `~/.hammerspoon` directory
-3. Reload Hammerspoon
 
-## Structure
-- `init.lua` – entrypoint that binds the workspace hotkeys
-- `space_utils.lua` – helpers for counting, creating, and navigating Spaces
-- `layout.lua` – logic to launch apps into the correct Spaces and verify placement
-- `workspaces.lua` – workspace presets and orchestration for quitting apps, setting up Spaces, and binding hotkeys
+### Option 1: Download App (Recommended)
+1. Go to the **[Releases](../../releases)** page.
+2. Download `SpacePigeon.zip`.
+3. Unzip and run **SpacePigeon.app**.
+4. Click **"Install & Reload"**.
 
-## Status
-This is an early open-source release.
-More modular structure, documentation, and GUI tools are coming soon.
+### Option 2: Build from Source
+If you prefer to build it yourself:
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/spacepigeon.git
+   cd spacepigeon
+   ```
+2. Run the build script:
+   ```bash
+   ./build_app.sh
+   ```
+3. Open the generated app:
+   ```bash
+   open SpacePigeon.app
+   ```
+
+## Requirements
+- **[Hammerspoon](https://www.hammerspoon.org/)** (The app will prompt you to download it if missing).
+
+## Configuration
+You can edit your workspaces by clicking **"Edit Config"** in the SpacePigeon app, or by editing `~/.hammerspoon/config.lua` directly.
 
 ## License
 MIT
