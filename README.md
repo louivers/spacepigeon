@@ -13,8 +13,21 @@
 ### Option 1: Download App (Recommended)
 1. Go to the **[Releases](../../releases)** page.
 2. Download `SpacePigeon.zip`.
-3. Unzip and run **SpacePigeon.app**.
-4. Click **"Install & Reload"**.
+3. Unzip the file.
+4. Run **SpacePigeon.app**.
+5. Click **"Install & Reload"**.
+
+### "Unidentified Developer" Warning?
+If macOS prevents the app from opening because it "cannot be verified":
+
+1. Click **Done** (or Cancel) on the warning dialog.
+2. Open **System Settings**.
+3. Go to **Privacy & Security**.
+4. Scroll down to the **Security** section.
+5. Click the **Open Anyway** button next to *"SpacePigeon.app was blocked..."*.
+6. Click **Open** in the final confirmation.
+
+*(This is required because the app is open-source and not signed with a paid Apple Developer certificate).*
 
 ### Option 2: Build from Source
 If you prefer to build it yourself:

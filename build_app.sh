@@ -75,9 +75,13 @@ swiftc launcher.swift -o "$MACOS/launcher"
 echo "📦 Copying Lua scripts..."
 cp init.lua layout.lua space_utils.lua workspaces.lua config.lua "$RESOURCES/"
 
-# 6. Zip it for distribution
+# 6. Ad-Hoc Code Signing
+echo "✍️  Signing app (Ad-Hoc)..."
+codesign --force --deep --sign - "$APP_DIR"
+
+# 7. Zip it for distribution (using ditto for better macOS compatibility)
 echo "🤐 Zipping into ${APP_NAME}.zip..."
 rm -f "${APP_NAME}.zip"
-zip -r "${APP_NAME}.zip" "$APP_DIR" > /dev/null
+ditto -c -k --keepParent "$APP_DIR" "${APP_NAME}.zip"
 
 echo "✅ Done! You can now distribute ${APP_NAME}.zip"
