@@ -76,19 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
     }
 
     @objc func editConfigClicked() {
-        let fileManager = FileManager.default
-        let home = fileManager.homeDirectoryForCurrentUser
-        let configPath = home.appendingPathComponent(".hammerspoon/config.lua")
-        
-        if fileManager.fileExists(atPath: configPath.path) {
-            NSWorkspace.shared.open(configPath)
-        } else {
-            let alert = NSAlert()
-            alert.messageText = "Config Not Found"
-            alert.informativeText = "Please install the configuration first."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
+        openConfigWindow()
     }
 
     @objc func installClicked() {
@@ -258,6 +246,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             let src = URL(fileURLWithPath: resourcePath).appendingPathComponent(file)
             let dst = targetDir.appendingPathComponent(file)
             
+            // Special handling for config.lua: Don't overwrite if it exists
+            if file == "config.lua" && fileManager.fileExists(atPath: dst.path) {
+                print("Skipping \(file) - already exists")
+                continue
+            }
+            
             do {
                 if fileManager.fileExists(atPath: dst.path) {
                     try fileManager.removeItem(at: dst)
@@ -320,8 +314,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
 }
 
 // Entry point
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.regular)
-app.run()
+@main
+struct AppEntry {
+    static let delegate = AppDelegate()
+    
+    static func main() {
+        let app = NSApplication.shared
+        app.delegate = delegate
+        app.setActivationPolicy(.regular)
+        app.run()
+    }
+}

@@ -69,7 +69,7 @@ EOF
 
 # 4. Compile Swift Launcher
 echo "🔨 Compiling Swift launcher..."
-swiftc launcher.swift -o "$MACOS/launcher"
+swiftc launcher.swift ConfigUI.swift -o "$MACOS/launcher"
 
 # 5. Copy Resources (Your Lua Scripts)
 echo "📦 Copying Lua scripts..."
