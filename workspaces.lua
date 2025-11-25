@@ -101,17 +101,40 @@ local function setupWorkspace(modeName, targetSpaces, layoutConfig)
     return
   end
 
-  -- Step 2: Enforce exact spaces (on Main Monitor only)
-  local okSpaces = spaceUtils.ensureMainSpaces(targetSpaces)
-  if not okSpaces then
-    hs.alert.show("Aborting " .. modeName .. " setup (spaces not correct)")
+  -- Step 2: Enforce exact spaces
+  -- Handle new config format (table with main/secondary) or legacy (number)
+  local mainSpaces = 0
+  local secondarySpaces = 0
+
+  if type(targetSpaces) == "table" then
+    mainSpaces = targetSpaces.main or 0
+    secondarySpaces = targetSpaces.secondary or 0
+  else
+    mainSpaces = targetSpaces
+  end
+
+  -- Main Monitor
+  local okMain = spaceUtils.ensureSpaces("main", mainSpaces)
+  if not okMain then
+    hs.alert.show("Aborting " .. modeName .. " setup (main spaces not correct)")
     return
+  end
+
+  -- Secondary Monitor (if requested and monitor exists)
+  if secondarySpaces > 0 then
+    local okSec = spaceUtils.ensureSpaces("secondary", secondarySpaces)
+    -- If secondary monitor is missing, we might just warn instead of aborting?
+    -- For now, if enforce fails (e.g. screen present but can't add space), we abort.
+    -- If screen is missing, ensureSpaces returns false/warns.
+    if not okSec then
+       hs.alert.show("Secondary monitor setup failed (continuing with main only)")
+    end
   end
 
   -- Step 3: Apply layout with verification & retries
   layout.applyLayoutWithChecks(layoutConfig, function()
     -- End on space 1 with first app focused
-    local s = spaceUtils.getSpaces()
+    local s = spaceUtils.getSpacesForMonitor("main")
     if s[1] then
       spaceUtils.gotoSpaceAndWait(s[1])
       focusFirstApp(layoutConfig)

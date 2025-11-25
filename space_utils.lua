@@ -30,8 +30,22 @@ local function getOrderedScreens()
   return result
 end
 
+-- Get spaces only for a specific monitor type ("main" or "secondary")
+function M.getSpacesForMonitor(monitorType)
+  local screens = getOrderedScreens()
+  local targetScreen
+  
+  if monitorType == "main" then
+    targetScreen = screens[1]
+  elseif monitorType == "secondary" then
+    targetScreen = screens[2] -- First secondary
+  end
+  
+  if not targetScreen then return {} end
+  return spaces.spacesForScreen(targetScreen) or {}
+end
+
 -- All space IDs for all screens, ordered by screen then space index
--- (Main Monitor spaces first, then Second Monitor spaces, etc.)
 function M.getSpaces()
   local screens = getOrderedScreens()
   local allSpaces = {}
@@ -46,10 +60,10 @@ function M.getSpaces()
   return allSpaces
 end
 
--- Ensure we have EXACTLY n spaces on the MAIN (Primary) screen only.
--- We do not touch spaces on secondary monitors as they are difficult to manage.
-function M.ensureMainSpaces(n)
-  local screen = hs.screen.primaryScreen()
+-- Generic helper to ensure N spaces on a specific screen
+local function ensureSpacesForScreen(screen, n)
+  if not screen then return false end
+
   local maxTries = 40
   
   local function getMySpaces()
@@ -67,7 +81,7 @@ function M.ensureMainSpaces(n)
   end
 
   if #s < n then
-    hs.alert.show("Could not create enough spaces on main screen (have " .. #s .. ", need " .. n .. ")")
+    hs.alert.show("Could not create enough spaces (have " .. #s .. ", need " .. n .. ")")
     return false
   end
 
@@ -107,11 +121,37 @@ function M.ensureMainSpaces(n)
   end
 
   if #s ~= n then
-    hs.alert.show("Could not enforce exact space count on main screen (have " .. #s .. ", need " .. n .. ")")
+    hs.alert.show("Could not enforce exact space count (have " .. #s .. ", need " .. n .. ")")
     return false
   end
 
   return true
+end
+
+function M.ensureSpaces(monitorType, n)
+  local screens = getOrderedScreens()
+  local targetScreen
+  
+  if monitorType == "main" then
+    targetScreen = screens[1]
+  elseif monitorType == "secondary" then
+    targetScreen = screens[2]
+  end
+  
+  if not targetScreen then
+    if monitorType == "secondary" and n == 0 then
+       return true -- acceptable to have 0 requirements if no screen
+    end
+    hs.alert.show("Monitor " .. monitorType .. " not found")
+    return false
+  end
+  
+  return ensureSpacesForScreen(targetScreen, n)
+end
+
+-- Legacy wrapper for backward compatibility if needed
+function M.ensureMainSpaces(n)
+  return M.ensureSpaces("main", n)
 end
 
 -- Helper to find which screen a space belongs to
@@ -133,7 +173,6 @@ function M.gotoSpaceAndWait(spaceId)
   
   local targetScreen = M.getScreenForSpace(spaceId)
   if not targetScreen then
-    -- Fallback: just wait a bit if we can't verify
     hs.timer.usleep(500000)
     return
   end

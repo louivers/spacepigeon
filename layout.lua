@@ -47,12 +47,6 @@ local function applyWindowPosition(win, pos)
 end
 
 -- Layout application (single-phase with verification + retries)
--- For each entry { name = "App", space = 1, pos = "left" }, we:
---  1) goto that space
---  2) launch app
---  3) wait for window
---  4) verify window is in that space
---  5) if not, kill app and retry (up to maxAttempts)
 function M.applyLayoutWithChecks(layout, done)
   local index = 1
 
@@ -65,10 +59,21 @@ function M.applyLayoutWithChecks(layout, done)
     local entry = layout[index]
     index = index + 1
 
-    local s = spaceUtils.getSpaces()
-    local spaceId = s[entry.space]
+    -- Determine Target Space ID
+    local spaceId = nil
+    
+    if entry.monitor and entry.space then
+      -- New format: { monitor="main", space=1 }
+      local monitorSpaces = spaceUtils.getSpacesForMonitor(entry.monitor)
+      spaceId = monitorSpaces[entry.space]
+    elseif entry.space then
+       -- Legacy format: absolute index
+       local all = spaceUtils.getSpaces()
+       spaceId = all[entry.space]
+    end
+
     if not spaceId then
-      hs.alert.show("Missing space index " .. tostring(entry.space) .. " for " .. entry.name)
+      hs.alert.show("Missing space for " .. entry.name)
       nextApp()
       return
     end
@@ -78,7 +83,7 @@ function M.applyLayoutWithChecks(layout, done)
     local function placeApp(attempt)
       attempt = attempt or 1
       if attempt > maxAttempts then
-        hs.alert.show("Failed to place " .. entry.name .. " in space " .. tostring(entry.space))
+        hs.alert.show("Failed to place " .. entry.name)
         nextApp()
         return
       end

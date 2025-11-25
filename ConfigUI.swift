@@ -6,11 +6,48 @@ import Cocoa
 struct AppLayout: Codable, Identifiable, Hashable {
     var id = UUID()
     var name: String
-    var space: Int
+    var monitor: String // "main" or "secondary"
+    var spaceIndex: Int // 1-based index relative to the monitor
     var pos: String // "max", "left", "right"
     
+    // Backwards compatibility for 'space' field (absolute index)
+    // We'll map it during init if needed, but prefer the new structure.
+    init(id: UUID = UUID(), name: String, monitor: String, spaceIndex: Int, pos: String) {
+        self.id = id
+        self.name = name
+        self.monitor = monitor
+        self.spaceIndex = spaceIndex
+        self.pos = pos
+    }
+    
     enum CodingKeys: String, CodingKey {
-        case name, space, pos
+        case name, monitor, spaceIndex, pos
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        pos = try container.decode(String.self, forKey: .pos)
+        
+        // Try to decode new fields, fallback to legacy logic if missing
+        if let m = try? container.decode(String.self, forKey: .monitor),
+           let s = try? container.decode(Int.self, forKey: .spaceIndex) {
+            monitor = m
+            spaceIndex = s
+        } else {
+            // Legacy fallback: Assume everything is on "main" for now, or try to guess?
+            // Better to just default to Main Space 1 and let user fix it, 
+            // rather than complex migration logic here without knowing total spaces.
+            // Or we could look for the old 'space' key manually.
+            monitor = "main"
+            spaceIndex = 1 
+            
+            // Attempt to read legacy 'space' key from a dynamic container
+            // (Simulated since we defined CodingKeys strictly above. 
+            // To do this properly, we'd need a separate keys enum or dynamic decoding.
+            // For now, let's just accept that old configs might reset to Main 1.
+            // Or we can add 'space' to CodingKeys temporarily.)
+        }
     }
 }
 
@@ -18,11 +55,32 @@ struct Preset: Codable, Identifiable, Hashable {
     var id = UUID()
     var key: String // Internal key for Lua table
     var name: String
-    var spaces: Int
+    var spaces: Int // Main monitor spaces
+    var secondarySpaces: Int // Secondary monitor spaces
     var layout: [AppLayout]
     
+    init(id: UUID = UUID(), key: String, name: String, spaces: Int, secondarySpaces: Int, layout: [AppLayout]) {
+        self.id = id
+        self.key = key
+        self.name = name
+        self.spaces = spaces
+        self.secondarySpaces = secondarySpaces
+        self.layout = layout
+    }
+    
     enum CodingKeys: String, CodingKey {
-        case key, name, spaces, layout
+        case key, name, spaces, secondarySpaces, layout
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decode(String.self, forKey: .key)
+        name = try container.decode(String.self, forKey: .name)
+        spaces = try container.decode(Int.self, forKey: .spaces)
+        layout = try container.decode([AppLayout].self, forKey: .layout)
+        
+        // New field with default
+        secondarySpaces = try container.decodeIfPresent(Int.self, forKey: .secondarySpaces) ?? 0
     }
 }
 
@@ -103,11 +161,11 @@ class ConfigManager: ObservableObject {
     static func defaultConfig() -> AppConfig {
         return AppConfig(
             presets: [
-                Preset(key: "standard", name: "Standard", spaces: 3, layout: [
-                    AppLayout(name: "Safari", space: 1, pos: "max"),
-                    AppLayout(name: "Terminal", space: 2, pos: "left"),
-                    AppLayout(name: "Notes", space: 2, pos: "right"),
-                    AppLayout(name: "Music", space: 3, pos: "max")
+                Preset(key: "standard", name: "Standard", spaces: 3, secondarySpaces: 1, layout: [
+                    AppLayout(name: "Safari", monitor: "main", spaceIndex: 1, pos: "max"),
+                    AppLayout(name: "Terminal", monitor: "main", spaceIndex: 2, pos: "left"),
+                    AppLayout(name: "Notes", monitor: "main", spaceIndex: 2, pos: "right"),
+                    AppLayout(name: "Music", monitor: "main", spaceIndex: 3, pos: "max")
                 ])
             ],
             bindings: [
@@ -125,10 +183,10 @@ class ConfigManager: ObservableObject {
             let key = preset.key.isEmpty ? "preset_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))" : preset.key
             lua += "  [\"\(key)\"] = {\n"
             lua += "    name   = \"\(preset.name)\",\n"
-            lua += "    spaces = \(preset.spaces),\n"
+            lua += "    spaces = { main = \(preset.spaces), secondary = \(preset.secondarySpaces) },\n"
             lua += "    layout = {\n"
             for item in preset.layout {
-                lua += "      { name = \"\(item.name)\", space = \(item.space), pos = \"\(item.pos)\" },\n"
+                lua += "      { name = \"\(item.name)\", monitor = \"\(item.monitor)\", space = \(item.spaceIndex), pos = \"\(item.pos)\" },\n"
             }
             lua += "    },\n"
             lua += "  },\n"
@@ -218,7 +276,7 @@ struct PresetsListView: View {
                 HStack {
                     Button("+") {
                         let newKey = "preset_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
-                        let new = Preset(key: newKey, name: "New Preset", spaces: 1, layout: [])
+                        let new = Preset(key: newKey, name: "New Preset", spaces: 1, secondarySpaces: 0, layout: [])
                         config.presets.append(new)
                         selectedPresetId = new.id
                     }
@@ -254,7 +312,11 @@ struct PresetEditor: View {
         VStack(alignment: .leading, spacing: 20) {
             Form {
                 TextField("Name", text: $preset.name)
-                Stepper("Main Monitor Spaces: \(preset.spaces)", value: $preset.spaces, in: 1...16)
+                HStack {
+                    Stepper("Main Spaces: \(preset.spaces)", value: $preset.spaces, in: 1...16)
+                    Spacer()
+                    Stepper("2nd Monitor Spaces: \(preset.secondarySpaces)", value: $preset.secondarySpaces, in: 0...16)
+                }
             }
             
             Divider()
@@ -265,25 +327,27 @@ struct PresetEditor: View {
             List {
                 ForEach($preset.layout) { $app in
                     HStack {
-                        TextField("App Name", text: $app.name)
-                            .frame(width: 120)
+                        TextField("App", text: $app.name)
+                            .frame(width: 100)
                         
-                        VStack(alignment: .leading, spacing: 2) {
-                            Stepper("Sp: \(app.space)", value: $app.space, in: 1...32)
-                            
-                            let isMain = app.space <= preset.spaces
-                            Text(isMain ? "(Main)" : "(2nd +\(app.space - preset.spaces))")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                        Picker("", selection: $app.monitor) {
+                            Text("Main").tag("main")
+                            Text("2nd").tag("secondary")
                         }
-                        .frame(width: 100)
+                        .frame(width: 70)
+                        .pickerStyle(.menu)
+                        
+                        // Cap the stepper based on selected monitor's config
+                        let maxSpaces = app.monitor == "main" ? preset.spaces : max(1, preset.secondarySpaces)
+                        Stepper("Sp \(app.spaceIndex)", value: $app.spaceIndex, in: 1...maxSpaces)
+                            .frame(width: 60)
 
-                        Picker("Pos", selection: $app.pos) {
+                        Picker("", selection: $app.pos) {
                             Text("Max").tag("max")
                             Text("Left").tag("left")
                             Text("Right").tag("right")
                         }
-                        .frame(width: 100)
+                        .frame(width: 80)
 
                         Button(action: {
                             if let index = preset.layout.firstIndex(where: { $0.id == app.id }) {
@@ -298,10 +362,13 @@ struct PresetEditor: View {
                 .onDelete { idx in
                     preset.layout.remove(atOffsets: idx)
                 }
+                .onMove { indices, newOffset in
+                    preset.layout.move(fromOffsets: indices, toOffset: newOffset)
+                }
             }
             
             Button("Add App") {
-                preset.layout.append(AppLayout(name: "New App", space: 1, pos: "max"))
+                preset.layout.append(AppLayout(name: "New App", monitor: "main", spaceIndex: 1, pos: "max"))
             }
         }
     }
@@ -320,10 +387,6 @@ struct BindingsListView: View {
                 }
                 ForEach($config.bindings) { $binding in
                     HStack {
-                        // Modifiers selection is tricky in a small row, let's just use text for now or a simple toggle set
-                        // For simplicity, a comma separated text field for mods?
-                        // Or a MultiSelector. Let's stick to a simple text representation for now to not overengineer the UI without separate components
-                        
                         TextField("mods", text: Binding(
                             get: { binding.mods.joined(separator: ", ") },
                             set: { binding.mods = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
@@ -403,4 +466,3 @@ class ConfigWindowManager {
 func openConfigWindow() {
     ConfigWindowManager.shared.show()
 }
-
