@@ -294,6 +294,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         let hsApp = runningApps.first { $0.bundleIdentifier == "org.hammerspoon.Hammerspoon" }
         
         if hsApp != nil {
+            // Method 1: URL Scheme (like ConfigUI)
+            if let url = URL(string: "hammerspoon://reloadConfig") {
+                NSWorkspace.shared.open(url)
+            }
+
+            // Method 2: AppleScript (Fallback)
             // Hammerspoon IS running. Reload config using AppleScript.
             let source = """
             tell application "Hammerspoon"
