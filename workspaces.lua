@@ -101,8 +101,8 @@ local function setupWorkspace(modeName, targetSpaces, layoutConfig)
     return
   end
 
-  -- Step 2: Enforce exact spaces
-  local okSpaces = spaceUtils.ensureExactSpaces(targetSpaces)
+  -- Step 2: Enforce exact spaces (on Main Monitor only)
+  local okSpaces = spaceUtils.ensureMainSpaces(targetSpaces)
   if not okSpaces then
     hs.alert.show("Aborting " .. modeName .. " setup (spaces not correct)")
     return

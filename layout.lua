@@ -114,6 +114,42 @@ function M.applyLayoutWithChecks(layout, done)
             win:focus()
             nextApp()
           else
+            -- Check if on the wrong screen (common issue with multi-monitor)
+            local winScreen = win:screen()
+            local targetScreen = spaceUtils.getScreenForSpace(spaceId)
+            
+            if winScreen and targetScreen and winScreen:id() ~= targetScreen:id() then
+              -- Attempt to move it to the correct screen
+              win:moveToScreen(targetScreen)
+              
+              hs.timer.doAfter(0.8, function()
+                -- Re-check space
+                local ws2 = spaces.windowSpaces(win) or {}
+                local nowInTarget = false
+                for _, sid in ipairs(ws2) do
+                  if sid == spaceId then nowInTarget = true; break end
+                end
+                
+                if nowInTarget then
+                  applyWindowPosition(win, entry.pos)
+                  win:focus()
+                  nextApp()
+                else
+                  -- Still failed? Kill app and try again in this space
+                  local a = win:application()
+                  if a then
+                    a:kill9()
+                    hs.timer.doAfter(1.0, function()
+                      placeApp(attempt + 1)
+                    end)
+                  else
+                    placeApp(attempt + 1)
+                  end
+                end
+              end)
+              return
+            end
+
             -- Kill app and try again in this space
             local a = win:application()
             if a then

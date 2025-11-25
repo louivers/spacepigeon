@@ -103,38 +103,15 @@ class ConfigManager: ObservableObject {
     static func defaultConfig() -> AppConfig {
         return AppConfig(
             presets: [
-                Preset(key: "phd", name: "PhD", spaces: 9, layout: [
-                    AppLayout(name: "Brave Browser", space: 1, pos: "max"),
-                    AppLayout(name: "Zotero", space: 2, pos: "max"),
-                    AppLayout(name: "Obsidian", space: 3, pos: "max"),
-                    AppLayout(name: "Mattermost", space: 4, pos: "max"),
-                    AppLayout(name: "Mail", space: 5, pos: "max"),
-                    AppLayout(name: "Calendar", space: 6, pos: "max"),
-                    AppLayout(name: "Marta", space: 8, pos: "max"),
-                    AppLayout(name: "Spotify", space: 9, pos: "max")
-                ]),
-                Preset(key: "chill", name: "Chill", spaces: 4, layout: [
-                    AppLayout(name: "Brave Browser", space: 1, pos: "max"),
-                    AppLayout(name: "Marta", space: 4, pos: "max")
-                ]),
-                Preset(key: "casualCoding", name: "Casual Coding", spaces: 5, layout: [
-                    AppLayout(name: "Brave Browser", space: 1, pos: "max"),
-                    AppLayout(name: "Cursor", space: 2, pos: "max"),
-                    AppLayout(name: "Marta", space: 4, pos: "max"),
-                    AppLayout(name: "Spotify", space: 5, pos: "max")
-                ]),
-                Preset(key: "split", name: "Split Coding", spaces: 4, layout: [
-                    AppLayout(name: "Cursor", space: 1, pos: "left"),
-                    AppLayout(name: "Brave Browser", space: 1, pos: "right"),
-                    AppLayout(name: "Marta", space: 2, pos: "max"),
-                    AppLayout(name: "Spotify", space: 3, pos: "max")
+                Preset(key: "standard", name: "Standard", spaces: 3, layout: [
+                    AppLayout(name: "Safari", space: 1, pos: "max"),
+                    AppLayout(name: "Terminal", space: 2, pos: "left"),
+                    AppLayout(name: "Notes", space: 2, pos: "right"),
+                    AppLayout(name: "Music", space: 3, pos: "max")
                 ])
             ],
             bindings: [
-                KeyBinding(mods: ["cmd", "alt", "ctrl"], key: "P", presetKey: "phd"),
-                KeyBinding(mods: ["cmd", "alt", "ctrl"], key: "C", presetKey: "chill"),
-                KeyBinding(mods: ["cmd", "alt", "ctrl"], key: "D", presetKey: "casualCoding"),
-                KeyBinding(mods: ["cmd", "alt", "ctrl"], key: "S", presetKey: "split")
+                KeyBinding(mods: ["cmd", "alt", "ctrl"], key: "S", presetKey: "standard")
             ]
         )
     }
@@ -145,8 +122,8 @@ class ConfigManager: ObservableObject {
         
         for preset in config.presets {
             // Sanitize key
-            let key = preset.key.isEmpty ? "preset_\(UUID().uuidString.prefix(8))" : preset.key
-            lua += "  \(key) = {\n"
+            let key = preset.key.isEmpty ? "preset_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))" : preset.key
+            lua += "  [\"\(key)\"] = {\n"
             lua += "    name   = \"\(preset.name)\",\n"
             lua += "    spaces = \(preset.spaces),\n"
             lua += "    layout = {\n"
@@ -162,9 +139,7 @@ class ConfigManager: ObservableObject {
         lua += "M.bindings = {\n"
         for binding in config.bindings {
             let modsString = binding.mods.map { "\"\($0)\"" }.joined(separator: ", ")
-            // Look up if preset exists, otherwise be careful?
-            // Assuming key matches.
-            lua += "  { mods = {\(modsString)}, key = \"\(binding.key)\", preset = presets.\(binding.presetKey) },\n"
+            lua += "  { mods = {\(modsString)}, key = \"\(binding.key)\", preset = presets[\"\(binding.presetKey)\"] },\n"
         }
         lua += "}\n\n"
         lua += "return M"
@@ -172,6 +147,12 @@ class ConfigManager: ObservableObject {
     }
     
     func reloadHammerspoon() {
+        // Method 1: URL Scheme (requires updated init.lua)
+        if let url = URL(string: "hammerspoon://reloadConfig") {
+            NSWorkspace.shared.open(url)
+        }
+
+        // Method 2: AppleScript (Fallback)
         let source = """
         tell application "Hammerspoon"
             execute lua code "hs.reload()"
@@ -236,7 +217,8 @@ struct PresetsListView: View {
                 }
                 HStack {
                     Button("+") {
-                        let new = Preset(key: "new", name: "New Preset", spaces: 1, layout: [])
+                        let newKey = "preset_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+                        let new = Preset(key: newKey, name: "New Preset", spaces: 1, layout: [])
                         config.presets.append(new)
                         selectedPresetId = new.id
                     }
@@ -272,8 +254,7 @@ struct PresetEditor: View {
         VStack(alignment: .leading, spacing: 20) {
             Form {
                 TextField("Name", text: $preset.name)
-                TextField("Unique ID (key)", text: $preset.key)
-                Stepper("Spaces: \(preset.spaces)", value: $preset.spaces, in: 1...16)
+                Stepper("Main Monitor Spaces: \(preset.spaces)", value: $preset.spaces, in: 1...16)
             }
             
             Divider()
@@ -286,14 +267,32 @@ struct PresetEditor: View {
                     HStack {
                         TextField("App Name", text: $app.name)
                             .frame(width: 120)
-                        Stepper("Sp: \(app.space)", value: $app.space, in: 1...16)
-                            .frame(width: 80)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Stepper("Sp: \(app.space)", value: $app.space, in: 1...32)
+                            
+                            let isMain = app.space <= preset.spaces
+                            Text(isMain ? "(Main)" : "(2nd +\(app.space - preset.spaces))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(width: 100)
+
                         Picker("Pos", selection: $app.pos) {
                             Text("Max").tag("max")
                             Text("Left").tag("left")
                             Text("Right").tag("right")
                         }
                         .frame(width: 100)
+
+                        Button(action: {
+                            if let index = preset.layout.firstIndex(where: { $0.id == app.id }) {
+                                preset.layout.remove(at: index)
+                            }
+                        }) {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .onDelete { idx in
@@ -341,6 +340,15 @@ struct BindingsListView: View {
                             }
                         }
                         .frame(width: 150)
+                        
+                        Button(action: {
+                            if let index = config.bindings.firstIndex(where: { $0.id == binding.id }) {
+                                config.bindings.remove(at: index)
+                            }
+                        }) {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .onDelete { idx in
