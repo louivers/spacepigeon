@@ -5,7 +5,8 @@ local presets = {
     name   = "Standard",
     spaces = 3,
     layout = {
-      { name = "Safari",   space = 1, pos = "max" },
+      -- Optional: add url="https://..." to open a specific webpage/deep link
+      { name = "Safari",   space = 1, pos = "max", url = "https://news.ycombinator.com" },
       { name = "Terminal", space = 2, pos = "left" },
       { name = "Notes",    space = 2, pos = "right" },
       { name = "Music",    space = 3, pos = "max" },

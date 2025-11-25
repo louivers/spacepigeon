@@ -9,25 +9,31 @@ struct AppLayout: Codable, Identifiable, Hashable {
     var monitor: String // "main" or "secondary"
     var spaceIndex: Int // 1-based index relative to the monitor
     var pos: String // "max", "left", "right"
+    var url: String = "" // Optional URL/Deep link
+    var isBrowser: Bool = false // New flag to indicate if advanced URL settings should be shown
     
     // Backwards compatibility for 'space' field (absolute index)
     // We'll map it during init if needed, but prefer the new structure.
-    init(id: UUID = UUID(), name: String, monitor: String, spaceIndex: Int, pos: String) {
+    init(id: UUID = UUID(), name: String, monitor: String, spaceIndex: Int, pos: String, url: String = "", isBrowser: Bool = false) {
         self.id = id
         self.name = name
         self.monitor = monitor
         self.spaceIndex = spaceIndex
         self.pos = pos
+        self.url = url
+        self.isBrowser = isBrowser
     }
     
     enum CodingKeys: String, CodingKey {
-        case name, monitor, spaceIndex, pos
+        case name, monitor, spaceIndex, pos, url, isBrowser
     }
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = try container.decode(String.self, forKey: .name)
         pos = try container.decode(String.self, forKey: .pos)
+        url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+        isBrowser = try container.decodeIfPresent(Bool.self, forKey: .isBrowser) ?? false
         
         // Try to decode new fields, fallback to legacy logic if missing
         if let m = try? container.decode(String.self, forKey: .monitor),
@@ -186,7 +192,8 @@ class ConfigManager: ObservableObject {
             lua += "    spaces = { main = \(preset.spaces), secondary = \(preset.secondarySpaces) },\n"
             lua += "    layout = {\n"
             for item in preset.layout {
-                lua += "      { name = \"\(item.name)\", monitor = \"\(item.monitor)\", space = \(item.spaceIndex), pos = \"\(item.pos)\" },\n"
+                let urlPart = item.url.isEmpty ? "" : ", url = \"\(item.url)\""
+                lua += "      { name = \"\(item.name)\", monitor = \"\(item.monitor)\", space = \(item.spaceIndex), pos = \"\(item.pos)\"\(urlPart) },\n"
             }
             lua += "    },\n"
             lua += "  },\n"
@@ -305,9 +312,59 @@ struct PresetsListView: View {
     }
 }
 
+struct AppSettingsView: View {
+    @Binding var app: AppLayout
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Advanced Settings for \(app.name)")
+                .font(.headline)
+            
+            Divider()
+            
+            Toggle("Is this a Browser?", isOn: $app.isBrowser)
+                .toggleStyle(.checkbox)
+            
+            if app.isBrowser {
+                VStack(alignment: .leading) {
+                    Text("Startup URL")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField("https://example.com", text: $app.url)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .padding(.leading, 20)
+            } else {
+                Text("Only enable this if you want this app to open a specific URL/Deep Link instead of just launching.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 20)
+            }
+            
+            Spacer()
+            
+            HStack {
+                Spacer()
+                Button("Done") {
+                    // Clear URL if not browser/enabled
+                    if !app.isBrowser {
+                        app.url = ""
+                    }
+                    presentationMode.wrappedValue.dismiss()
+                }
+            }
+        }
+        .padding()
+        .frame(width: 400, height: 250)
+    }
+}
+
 struct PresetEditor: View {
     @Binding var preset: Preset
     
+    @State private var editingAppId: UUID? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Form {
@@ -330,6 +387,21 @@ struct PresetEditor: View {
                         TextField("App", text: $app.name)
                             .frame(width: 100)
                         
+                        // Advanced Settings Gear
+                        Button(action: {
+                            editingAppId = app.id
+                        }) {
+                            Image(systemName: "gearshape.fill")
+                                .foregroundColor(app.isBrowser ? .blue : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: Binding(
+                            get: { editingAppId == app.id },
+                            set: { if !$0 { editingAppId = nil } }
+                        )) {
+                             AppSettingsView(app: $app)
+                        }
+
                         Picker("", selection: $app.monitor) {
                             Text("Main").tag("main")
                             Text("2nd").tag("secondary")
