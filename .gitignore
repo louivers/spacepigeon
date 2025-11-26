@@ -2,7 +2,6 @@
 SpacePigeon.app/
 SpacePigeon.zip
 *.icns
-*.png
 *.o
 *.dSYM/
 
