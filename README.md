@@ -1,7 +1,7 @@
 # SpacePigeon: Saved Workspaces for macOS
 
 <div align="center">
-  <img src="spacepigeon.png" alt="SpacePigeon Logo" width="200"/>
+  <img src="spacepigeon.png" alt="SpacePigeon Logo" width="600"/>
 </div>
 
 **SpacePigeon** is a native macOS app (powered by Hammerspoon) that lets you define *workspaces* — which apps open, which desktop spaces they go to, and how windows are arranged.
