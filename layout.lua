@@ -178,9 +178,25 @@ function M.applyLayoutWithChecks(layout, done)
                  hs.timer.doAfter(1.0, function() placeApp(attempt + 1) end)
               end)
             else
-               -- Same screen but wrong space? Kill and retry
-               if win:application() then win:application():kill9() end
-               hs.timer.doAfter(1.0, function() placeApp(attempt + 1) end)
+               -- Same screen but wrong space? Move it!
+               spaces.moveWindowToSpace(win:id(), spaceId)
+               hs.timer.doAfter(0.8, function()
+                  -- Re-check
+                  local ws3 = spaces.windowSpaces(win) or {}
+                  for _, sid in ipairs(ws3) do
+                    if sid == spaceId then
+                      applyWindowPosition(win, entry.pos)
+                      win:focus()
+                      if entry.url then openUrlCleanly(entry.name, entry.url) end
+                      nextApp()
+                      return
+                    end
+                  end
+                  
+                  -- If still failed, THEN kill
+                  if win:application() then win:application():kill9() end
+                  hs.timer.doAfter(1.0, function() placeApp(attempt + 1) end)
+               end)
             end
           end
         end)

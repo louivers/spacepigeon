@@ -104,6 +104,31 @@ struct KeyBinding: Codable, Identifiable, Hashable {
 struct AppConfig: Codable {
     var presets: [Preset]
     var bindings: [KeyBinding]
+    var keepAlive: [String]
+
+    init(presets: [Preset], bindings: [KeyBinding], keepAlive: [String] = []) {
+        self.presets = presets
+        self.bindings = bindings
+        self.keepAlive = keepAlive
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case presets, bindings, keepAlive
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        presets = try container.decode([Preset].self, forKey: .presets)
+        bindings = try container.decode([KeyBinding].self, forKey: .bindings)
+        keepAlive = try container.decodeIfPresent([String].self, forKey: .keepAlive) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(presets, forKey: .presets)
+        try container.encode(bindings, forKey: .bindings)
+        try container.encode(keepAlive, forKey: .keepAlive)
+    }
 }
 
 // MARK: - Config Manager
@@ -176,12 +201,21 @@ class ConfigManager: ObservableObject {
             ],
             bindings: [
                 KeyBinding(mods: ["cmd", "alt", "ctrl"], key: "S", presetKey: "standard")
-            ]
+            ],
+            keepAlive: ["Spotify"]
         )
     }
     
     func generateLua(from config: AppConfig) -> String {
         var lua = "local M = {}\n\n"
+
+        lua += "-- Apps to keep alive when switching modes (e.g. Spotify)\n"
+        lua += "M.keepAlive = {\n"
+        for app in config.keepAlive {
+            lua += "  \"\(app)\",\n"
+        }
+        lua += "}\n\n"
+
         lua += "local presets = {\n"
         
         for preset in config.presets {
@@ -246,6 +280,9 @@ struct ConfigView: View {
                 
                 BindingsListView(config: $manager.config)
                     .tabItem { Label("Bindings", systemImage: "keyboard") }
+                
+                GeneralSettingsView(config: $manager.config)
+                    .tabItem { Label("General", systemImage: "gear") }
             }
             
             HStack {
@@ -498,6 +535,57 @@ struct BindingsListView: View {
             }
             .padding()
         }
+    }
+}
+
+struct GeneralSettingsView: View {
+    @Binding var config: AppConfig
+    @State private var newAppName: String = ""
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Global Settings")
+                .font(.headline)
+            
+            Divider()
+            
+            VStack(alignment: .leading) {
+                Text("Keep Alive Apps")
+                    .font(.subheadline)
+                    .bold()
+                Text("These apps will not be closed when switching modes. They will be moved to their assigned space if applicable.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                List {
+                    ForEach(config.keepAlive, id: \.self) { appName in
+                        Text(appName)
+                    }
+                    .onDelete { indices in
+                        config.keepAlive.remove(atOffsets: indices)
+                    }
+                }
+                .frame(height: 200)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2)))
+                
+                HStack {
+                    TextField("App Name (e.g. Spotify)", text: $newAppName)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    Button("Add") {
+                        let name = newAppName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !name.isEmpty && !config.keepAlive.contains(name) {
+                            config.keepAlive.append(name)
+                            newAppName = ""
+                        }
+                    }
+                    .disabled(newAppName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            
+            Spacer()
+        }
+        .padding()
     }
 }
 

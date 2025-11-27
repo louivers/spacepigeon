@@ -95,7 +95,7 @@ local function setupWorkspace(modeName, targetSpaces, layoutConfig)
   hs.alert.show("Setting up " .. modeName .. " workspace...")
 
   -- Step 1: Deep quit apps
-  local okQuit = deepQuitAllApps()
+  local okQuit = deepQuitAllApps(config.keepAlive)
   if not okQuit then
     hs.alert.show("Aborting " .. modeName .. " setup (could not close all apps)")
     return

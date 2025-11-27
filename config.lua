@@ -14,6 +14,11 @@ local presets = {
   },
 }
 
+-- Apps to keep alive when switching modes (e.g. Spotify)
+M.keepAlive = {
+  "Spotify",
+}
+
 M.presets = presets
 
 M.bindings = {
