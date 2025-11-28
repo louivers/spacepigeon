@@ -82,6 +82,13 @@ Set up global hotkeys to trigger your presets.
 - **Key**: The key to press (e.g., `S`, `1`, `F`).
 - **Preset**: Select which preset this hotkey should activate.
 
+### General Tab
+Global settings that apply to all presets.
+- **Keep Alive Apps**: A list of applications that should *not* be quit when switching presets.
+  - By default, SpacePigeon quits apps not defined in the current preset to keep your workspace clean.
+  - Add apps here (e.g., "Spotify", "Discord") to keep them running in the background.
+  - If a kept-alive app is also part of the new preset's layout, it will be moved to its assigned space/position.
+
 After making changes, click **"Save & Reload Hammerspoon"** to apply them immediately.
 
 ## Requirements

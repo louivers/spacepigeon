@@ -295,7 +295,7 @@ struct ConfigView: View {
             }
             .padding()
         }
-        .frame(width: 700, height: 500)
+        .frame(minWidth: 800, minHeight: 600)
         .padding()
     }
 }
@@ -394,6 +394,41 @@ struct AppSettingsView: View {
         }
         .padding()
         .frame(width: 400, height: 250)
+        .onTapGesture {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
+    }
+}
+
+struct MinimalistTextField: View {
+    var placeholder: String
+    @Binding var text: String
+    var align: TextAlignment = .leading
+    
+    @FocusState private var isFocused: Bool
+    @State private var isHovering: Bool = false
+    
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(align)
+            .focused($isFocused)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(NSColor.controlBackgroundColor))
+                    .opacity(isFocused ? 1.0 : (isHovering ? 0.5 : 0.0))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(isFocused ? Color.accentColor.opacity(0.6) : (isHovering ? Color.secondary.opacity(0.2) : Color.clear), lineWidth: 1)
+            )
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.primary.opacity(0.03)) // Very subtle permanent background
+            )
+            .onHover { hover in isHovering = hover }
     }
 }
 
@@ -402,83 +437,190 @@ struct PresetEditor: View {
     
     @State private var editingAppId: UUID? = nil
 
+    func moveUp(_ app: AppLayout) {
+        if let index = preset.layout.firstIndex(where: { $0.id == app.id }), index > 0 {
+            withAnimation {
+                preset.layout.swapAt(index, index - 1)
+            }
+        }
+    }
+    
+    func moveDown(_ app: AppLayout) {
+        if let index = preset.layout.firstIndex(where: { $0.id == app.id }), index < preset.layout.count - 1 {
+            withAnimation {
+                preset.layout.swapAt(index, index + 1)
+            }
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Form {
-                TextField("Name", text: $preset.name)
+        VStack(alignment: .leading, spacing: 16) {
+            // Header Section
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Stepper("Main Spaces: \(preset.spaces)", value: $preset.spaces, in: 1...16)
+                    Text("Preset Name")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    MinimalistTextField(placeholder: "Standard", text: $preset.name)
+                        .font(.title3)
+                }
+                
+                HStack(spacing: 24) {
+                    VStack(alignment: .leading) {
+                        Text("Main Monitor Spaces")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Stepper(value: $preset.spaces, in: 1...16) {
+                            Text("\(preset.spaces)")
+                                .font(.system(.body, design: .monospaced))
+                                .frame(minWidth: 20)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text("Secondary Monitor Spaces")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Stepper(value: $preset.secondarySpaces, in: 0...16) {
+                            Text("\(preset.secondarySpaces)")
+                                .font(.system(.body, design: .monospaced))
+                                .frame(minWidth: 20)
+                        }
+                    }
                     Spacer()
-                    Stepper("2nd Monitor Spaces: \(preset.secondarySpaces)", value: $preset.secondarySpaces, in: 0...16)
                 }
             }
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            .cornerRadius(8)
             
             Divider()
             
-            Text("Applications Layout")
-                .font(.headline)
+            HStack {
+                Text("Applications Layout")
+                    .font(.headline)
+                Spacer()
+                Button(action: {
+                    preset.layout.append(AppLayout(name: "New App", monitor: "main", spaceIndex: 1, pos: "max"))
+                }) {
+                    Label("Add App", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+            }
             
-            List {
-                ForEach($preset.layout) { $app in
-                    HStack {
-                        TextField("App", text: $app.name)
-                            .frame(width: 100)
-                        
-                        // Advanced Settings Gear
-                        Button(action: {
-                            editingAppId = app.id
-                        }) {
-                            Image(systemName: "gearshape.fill")
-                                .foregroundColor(app.isBrowser ? .blue : .secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .popover(isPresented: Binding(
-                            get: { editingAppId == app.id },
-                            set: { if !$0 { editingAppId = nil } }
-                        )) {
-                             AppSettingsView(app: $app)
-                        }
-
-                        Picker("", selection: $app.monitor) {
-                            Text("Main").tag("main")
-                            Text("2nd").tag("secondary")
-                        }
-                        .frame(width: 70)
-                        .pickerStyle(.menu)
-                        
-                        // Cap the stepper based on selected monitor's config
-                        let maxSpaces = app.monitor == "main" ? preset.spaces : max(1, preset.secondarySpaces)
-                        Stepper("Sp \(app.spaceIndex)", value: $app.spaceIndex, in: 1...maxSpaces)
-                            .frame(width: 60)
-
-                        Picker("", selection: $app.pos) {
-                            Text("Max").tag("max")
-                            Text("Left").tag("left")
-                            Text("Right").tag("right")
-                        }
-                        .frame(width: 80)
-
-                        Button(action: {
-                            if let index = preset.layout.firstIndex(where: { $0.id == app.id }) {
-                                preset.layout.remove(at: index)
+            ScrollView {
+                VStack(spacing: 10) {
+                    if preset.layout.isEmpty {
+                        Text("No apps configured")
+                            .foregroundColor(.secondary)
+                            .padding(.top, 20)
+                    }
+                    
+                    ForEach($preset.layout) { $app in
+                        HStack(spacing: 12) {
+                            // Reorder controls
+                            VStack(spacing: 4) {
+                                Button(action: { moveUp(app) }) {
+                                    Image(systemName: "chevron.up")
+                                        .font(.system(size: 9, weight: .bold))
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(preset.layout.first?.id == app.id)
+                                .opacity(preset.layout.first?.id == app.id ? 0.3 : 0.8)
+                                
+                                Button(action: { moveDown(app) }) {
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 9, weight: .bold))
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(preset.layout.last?.id == app.id)
+                                .opacity(preset.layout.last?.id == app.id ? 0.3 : 0.8)
                             }
-                        }) {
-                            Image(systemName: "trash")
+                            .frame(width: 16)
+                            
+                            // App Name & Settings
+                            HStack(spacing: 8) {
+                                Image(systemName: "app.fill")
+                                    .foregroundColor(.secondary)
+                                MinimalistTextField(placeholder: "App Name", text: $app.name)
+                                    .font(.system(size: 14, weight: .medium))
+                                
+                                Button(action: { editingAppId = app.id }) {
+                                    Image(systemName: "gearshape.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(app.isBrowser ? .accentColor : .secondary.opacity(0.7))
+                                }
+                                .buttonStyle(.plain)
+                                .popover(isPresented: Binding(
+                                    get: { editingAppId == app.id },
+                                    set: { if !$0 { editingAppId = nil } }
+                                )) {
+                                     AppSettingsView(app: $app)
+                                }
+                            }
+                            .frame(width: 160, alignment: .leading)
+
+                            Divider()
+                                .frame(height: 20)
+
+                            // Monitor
+                            Picker("", selection: $app.monitor) {
+                                Text("Main").tag("main")
+                                Text("2nd").tag("secondary")
+                            }
+                            .frame(width: 75)
+                            .labelsHidden()
+                            
+                            // Space
+                            let maxSpaces = app.monitor == "main" ? preset.spaces : max(1, preset.secondarySpaces)
+                            HStack(spacing: 2) {
+                                Text("Sp")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Stepper("", value: $app.spaceIndex, in: 1...maxSpaces)
+                                    .labelsHidden()
+                                Text("\(app.spaceIndex)")
+                                    .font(.system(.body, design: .monospaced))
+                                    .frame(width: 20, alignment: .center)
+                            }
+                            
+                            // Position
+                            Picker("", selection: $app.pos) {
+                                Label("Max", systemImage: "rectangle.fill").tag("max")
+                                Label("Left", systemImage: "rectangle.leading.third.inset.filled").tag("left")
+                                Label("Right", systemImage: "rectangle.trailing.third.inset.filled").tag("right")
+                            }
+                            .frame(width: 85)
+                            .labelsHidden()
+
+                            Spacer()
+
+                            // Delete
+                            Button(action: {
+                                if let index = preset.layout.firstIndex(where: { $0.id == app.id }) {
+                                    preset.layout.remove(at: index)
+                                }
+                            }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.red.opacity(0.8))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.black.opacity(0.1), lineWidth: 0.5)
+                        )
                     }
                 }
-                .onDelete { idx in
-                    preset.layout.remove(atOffsets: idx)
-                }
-                .onMove { indices, newOffset in
-                    preset.layout.move(fromOffsets: indices, toOffset: newOffset)
-                }
+                .padding(1) // Avoid clipping shadows if added
             }
-            
-            Button("Add App") {
-                preset.layout.append(AppLayout(name: "New App", monitor: "main", spaceIndex: 1, pos: "max"))
-            }
+        }
+        .onTapGesture {
+            NSApp.keyWindow?.makeFirstResponder(nil)
         }
     }
 }
@@ -487,53 +629,92 @@ struct BindingsListView: View {
     @Binding var config: AppConfig
     
     var body: some View {
-        VStack {
-            List {
-                HStack {
-                    Text("Modifiers").bold().frame(width: 150, alignment: .leading)
-                    Text("Key").bold().frame(width: 50, alignment: .center)
-                    Text("Preset ID").bold().frame(width: 150, alignment: .leading)
-                }
-                ForEach($config.bindings) { $binding in
-                    HStack {
-                        TextField("mods", text: Binding(
-                            get: { binding.mods.joined(separator: ", ") },
-                            set: { binding.mods = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
-                        ))
-                        .frame(width: 150)
-                        
-                        TextField("Key", text: $binding.key)
-                            .frame(width: 50)
-                            .multilineTextAlignment(.center)
-                        
-                        Picker("Preset", selection: $binding.presetKey) {
-                            ForEach(config.presets, id: \.key) { preset in
-                                Text(preset.name).tag(preset.key)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Key Bindings")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(.bottom, 4)
+
+            // Header Row
+            HStack(spacing: 12) {
+                Text("Modifiers")
+                    .font(.caption)
+                    .bold()
+                    .foregroundColor(.secondary)
+                    .frame(width: 160, alignment: .leading)
+                Text("Key")
+                    .font(.caption)
+                    .bold()
+                    .foregroundColor(.secondary)
+                    .frame(width: 50, alignment: .center)
+                Text("Target Preset")
+                    .font(.caption)
+                    .bold()
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer().frame(width: 20) // Trash icon space
+            }
+            .padding(.horizontal, 12)
+            
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach($config.bindings) { $binding in
+                        HStack(spacing: 12) {
+                            // Modifiers
+                            MinimalistTextField(placeholder: "Cmd, Alt...", text: Binding(
+                                get: { binding.mods.joined(separator: ", ") },
+                                set: { binding.mods = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
+                            ))
+                            .frame(width: 160)
+                            
+                            // Key
+                            MinimalistTextField(placeholder: "K", text: $binding.key, align: .center)
+                                .frame(width: 50)
+                            
+                            // Preset Picker
+                            Picker("", selection: $binding.presetKey) {
+                                ForEach(config.presets, id: \.key) { preset in
+                                    Text(preset.name).tag(preset.key)
+                                }
                             }
-                        }
-                        .frame(width: 150)
-                        
-                        Button(action: {
-                            if let index = config.bindings.firstIndex(where: { $0.id == binding.id }) {
-                                config.bindings.remove(at: index)
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity)
+                            
+                            // Delete
+                            Button(action: {
+                                if let index = config.bindings.firstIndex(where: { $0.id == binding.id }) {
+                                    config.bindings.remove(at: index)
+                                }
+                            }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.red.opacity(0.8))
                             }
-                        }) {
-                            Image(systemName: "trash")
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
                     }
                 }
-                .onDelete { idx in
-                    config.bindings.remove(atOffsets: idx)
-                }
             }
+            .background(Color(NSColor.windowBackgroundColor)) // Clear background
             
-            Button("Add Binding") {
+            Button(action: {
                 // default to first preset
                 let firstKey = config.presets.first?.key ?? ""
                 config.bindings.append(KeyBinding(mods: ["cmd", "alt", "ctrl"], key: "A", presetKey: firstKey))
+            }) {
+                Label("Add Binding", systemImage: "plus")
             }
-            .padding()
+            .buttonStyle(.bordered)
+            .padding(.top, 8)
+        }
+        .padding()
+        .onTapGesture {
+            NSApp.keyWindow?.makeFirstResponder(nil)
         }
     }
 }
@@ -607,7 +788,7 @@ class ConfigWindowManager {
         let hostingController = NSHostingController(rootView: configView)
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 650),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -626,3 +807,4 @@ class ConfigWindowManager {
 func openConfigWindow() {
     ConfigWindowManager.shared.show()
 }
+
