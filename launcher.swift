@@ -264,14 +264,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             return
         }
 
-        let filesToCopy = ["init.lua", "layout.lua", "space_utils.lua", "workspaces.lua", "config.lua"]
+        let filesToCopy = ["init.lua", "lua/layout.lua", "lua/space_utils.lua", "lua/workspaces.lua", "lua/config.lua"]
         
         for file in filesToCopy {
             let src = URL(fileURLWithPath: resourcePath).appendingPathComponent(file)
             let dst = targetDir.appendingPathComponent(file)
+
+            let parentDir = dst.deletingLastPathComponent()
+            if !fileManager.fileExists(atPath: parentDir.path) {
+                do {
+                    try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+                } catch {
+                    print("Failed to create directory \(parentDir.path): \(error)")
+                    continue
+                }
+            }
             
             // Special handling for config.lua: Don't overwrite if it exists
-            if file == "config.lua" && fileManager.fileExists(atPath: dst.path) {
+            if file == "lua/config.lua" && fileManager.fileExists(atPath: dst.path) {
                 print("Skipping \(file) - already exists")
                 continue
             }

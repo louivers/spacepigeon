@@ -71,9 +71,11 @@ EOF
 echo "🔨 Compiling Swift launcher..."
 swiftc launcher.swift ConfigUI.swift -o "$MACOS/launcher"
 
-# 5. Copy Resources (Your Lua Scripts)
-echo "📦 Copying Lua scripts..."
-cp init.lua layout.lua space_utils.lua workspaces.lua config.lua "$RESOURCES/"
+# 5. Copy Resources (Lua sources)
+echo "📦 Copying Lua sources..."
+mkdir -p "$RESOURCES/lua"
+cp init.lua "$RESOURCES/"
+cp lua/*.lua "$RESOURCES/lua/"
 
 # 6. Ad-Hoc Signing (Minimum for M1+)
 echo "✍️  Signing app"

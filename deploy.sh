@@ -21,12 +21,9 @@ fi
 
 # 2. Copy Lua files
 echo "Copying files..."
-cp "$SOURCE_DIR/init.lua" \
-   "$SOURCE_DIR/layout.lua" \
-   "$SOURCE_DIR/space_utils.lua" \
-   "$SOURCE_DIR/workspaces.lua" \
-   "$SOURCE_DIR/config.lua" \
-   "$TARGET_DIR/"
+mkdir -p "$TARGET_DIR/lua"
+cp "$SOURCE_DIR/init.lua" "$TARGET_DIR/"
+cp "$SOURCE_DIR/lua/"*.lua "$TARGET_DIR/lua/"
 
 echo "Deployment complete!"
 echo "Hammerspoon should detect the changes and reload automatically."

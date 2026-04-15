@@ -1,8 +1,8 @@
 local app    = require("hs.application")
 local hotkey = require("hs.hotkey")
-local spaceUtils = require("space_utils")
-local layout     = require("layout")
-local config     = require("config")
+local spaceUtils = require("lua.space_utils")
+local layout     = require("lua.layout")
+local config     = require("lua.config")
 
 local M = {}
 
@@ -32,7 +32,7 @@ local function deepQuitAllApps(keepExtra)
       local name = a:name()
       if name
          and not isKept(name)
-         and a:mainWindow() ~= nil   -- ignore menu bar helpers / agents
+         and a:mainWindow() ~= nil
       then
         table.insert(result, a)
       end
@@ -40,7 +40,6 @@ local function deepQuitAllApps(keepExtra)
     return result
   end
 
-  -- Phase 1: graceful quit
   for _, a in ipairs(remainingRealApps()) do
     a:kill()
   end
@@ -57,7 +56,6 @@ local function deepQuitAllApps(keepExtra)
     return true
   end
 
-  -- Phase 2: force quit
   for _, a in ipairs(rem) do
     a:kill9()
   end
@@ -94,15 +92,12 @@ end
 local function setupWorkspace(modeName, targetSpaces, layoutConfig)
   hs.alert.show("Setting up " .. modeName .. " workspace...")
 
-  -- Step 1: Deep quit apps
   local okQuit = deepQuitAllApps(config.keepAlive)
   if not okQuit then
     hs.alert.show("Aborting " .. modeName .. " setup (could not close all apps)")
     return
   end
 
-  -- Step 2: Enforce exact spaces
-  -- Handle new config format (table with main/secondary) or legacy (number)
   local mainSpaces = 0
   local secondarySpaces = 0
 
@@ -113,27 +108,20 @@ local function setupWorkspace(modeName, targetSpaces, layoutConfig)
     mainSpaces = targetSpaces
   end
 
-  -- Main Monitor
   local okMain = spaceUtils.ensureSpaces("main", mainSpaces)
   if not okMain then
     hs.alert.show("Aborting " .. modeName .. " setup (main spaces not correct)")
     return
   end
 
-  -- Secondary Monitor (if requested and monitor exists)
   if secondarySpaces > 0 then
     local okSec = spaceUtils.ensureSpaces("secondary", secondarySpaces)
-    -- If secondary monitor is missing, we might just warn instead of aborting?
-    -- For now, if enforce fails (e.g. screen present but can't add space), we abort.
-    -- If screen is missing, ensureSpaces returns false/warns.
     if not okSec then
        hs.alert.show("Secondary monitor setup failed (continuing with main only)")
     end
   end
 
-  -- Step 3: Apply layout with verification & retries
   layout.applyLayoutWithChecks(layoutConfig, function()
-    -- End on space 1 with first app focused
     local s = spaceUtils.getSpacesForMonitor("main")
     if s[1] then
       spaceUtils.gotoSpaceAndWait(s[1])
