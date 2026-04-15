@@ -8,3 +8,6 @@ SpacePigeon.zip
 # OS files
 .DS_Store
 
+# Cursor
+.cursor/
+
