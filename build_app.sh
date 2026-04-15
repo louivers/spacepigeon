@@ -76,7 +76,10 @@ echo "📦 Copying Lua scripts..."
 cp init.lua layout.lua space_utils.lua workspaces.lua config.lua "$RESOURCES/"
 
 # 6. Ad-Hoc Signing (Minimum for M1+)
-echo "✍️  Signing app (Ad-Hoc)..."
+echo "✍️  Signing app"
+# Remove macOS extended attributes that can break codesign
+# (e.g. "resource fork, Finder information, or similar detritus not allowed")
+xattr -cr "$APP_DIR"
 # Simple ad-hoc signing for the binary. Required for Apple Silicon.
 codesign --force --sign - "$MACOS/launcher"
 
