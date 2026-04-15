@@ -18,7 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             windowSize.width,
             windowSize.height
         )
-        
+
         window = NSWindow(
             contentRect: rect,
             styleMask: [.titled, .closable, .miniaturizable],
@@ -27,7 +27,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         )
         window.title = "SpacePigeon Setup"
         window.center()
-        
+
         let contentView = NSView(frame: window.contentView!.bounds)
         window.contentView = contentView
 
@@ -113,25 +113,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             self.performInstall()
         }
     }
-    
-    // URLSession Delegate to follow redirects
+
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         completionHandler(request)
     }
 
     func downloadAndInstallHammerspoon(statusUpdater: @escaping (String) -> Void) -> (Bool, String?) {
         statusUpdater("Downloading Hammerspoon...")
-        
-        // Fallback to specific version URL if "latest" redirect fails
-        // Using 0.9.100 release asset directly which is robust
         guard let url = URL(string: "https://github.com/Hammerspoon/hammerspoon/releases/download/0.9.100/Hammerspoon-0.9.100.zip") else {
             return (false, "Invalid URL")
         }
-        
-        // Use User's Applications folder (~/Applications)
+
         let userApps = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
-        
-        // Create ~/Applications if it doesn't exist
         if !FileManager.default.fileExists(atPath: userApps.path) {
             do {
                 try FileManager.default.createDirectory(at: userApps, withIntermediateDirectories: true, attributes: nil)
@@ -139,21 +132,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
                 return (false, "Could not create ~/Applications: \(error.localizedDescription)")
             }
         }
-        
-        // Destination zip path: ~/Applications/Hammerspoon.zip
+
         let zipPath = userApps.appendingPathComponent("Hammerspoon.zip")
         let appPath = userApps.appendingPathComponent("Hammerspoon.app")
 
         let downloadGroup = DispatchGroup()
         downloadGroup.enter()
-        
+
         var success = false
         var errorMsg: String? = nil
-        
-        // Configure session to follow redirects
+
         let config = URLSessionConfiguration.default
         let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        
+
         let task = session.downloadTask(with: url) { location, response, error in
             if let error = error {
                 errorMsg = "Download failed: \(error.localizedDescription)"
@@ -161,12 +152,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
                 errorMsg = "HTTP Error: \(httpResponse.statusCode)"
             } else if let location = location {
                 do {
-                    // Validate size (avoid 0 byte error pages)
                     let attr = try FileManager.default.attributesOfItem(atPath: location.path)
                     if let size = attr[.size] as? Int64, size < 1000 {
                          errorMsg = "Download too small (\(size) bytes). Likely blocked or invalid URL."
                     } else {
-                        // Remove old zip if exists
                         if FileManager.default.fileExists(atPath: zipPath.path) {
                             try FileManager.default.removeItem(at: zipPath)
                         }
@@ -180,28 +169,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             downloadGroup.leave()
         }
         task.resume()
-        
+
         downloadGroup.wait()
-        
         if !success { return (false, errorMsg ?? "Download failed") }
-        
         statusUpdater("Unzipping Hammerspoon...")
-        
-        // Use NSWorkspace to unzip via Archive Utility (Native, Trusted, Robust)
+
         if !NSWorkspace.shared.open(zipPath) {
              return (false, "Failed to open zip file with System Archive Utility")
         }
-        
-        // Wait for Hammerspoon.app to appear (Timeout 30s)
+
         var tries = 0
         let maxTries = 60
         while !FileManager.default.fileExists(atPath: appPath.path) && tries < maxTries {
             Thread.sleep(forTimeInterval: 0.5)
             tries += 1
         }
-        
+
         if FileManager.default.fileExists(atPath: appPath.path) {
-             // Cleanup zip
              try? FileManager.default.removeItem(at: zipPath)
              return (true, nil)
         } else {
@@ -213,24 +197,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         let fileManager = FileManager.default
         let home = fileManager.homeDirectoryForCurrentUser
         let targetDir = home.appendingPathComponent(".hammerspoon")
-        
+
         func updateStatus(_ text: String) {
             DispatchQueue.main.async {
                 self.statusLabel.stringValue = text
             }
         }
 
-        // 1. Check Hammerspoon presence on disk
         updateStatus("Checking for Hammerspoon...")
         let hsApps = [
             "/Applications/Hammerspoon.app",
             "\(home.path)/Applications/Hammerspoon.app"
         ]
-        
+
         var hsInstalled = hsApps.contains { fileManager.fileExists(atPath: $0) }
-        
         if !hsInstalled {
-            // Auto-install Hammerspoon
             let (installed, errorMsg) = downloadAndInstallHammerspoon(statusUpdater: updateStatus)
             if !installed {
                 DispatchQueue.main.async {
@@ -249,7 +230,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             hsInstalled = true
         }
 
-        // 2. Create Directory
         do {
             try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true, attributes: nil)
         } catch {
@@ -257,7 +237,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             return
         }
 
-        // 3. Copy Files
         updateStatus("Copying configuration files...")
         guard let resourcePath = Bundle.main.resourcePath else {
             updateStatus("Error: No resource path found.")
@@ -265,7 +244,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         }
 
         let filesToCopy = ["init.lua", "lua/layout.lua", "lua/space_utils.lua", "lua/workspaces.lua", "lua/config.lua"]
-        
+
         for file in filesToCopy {
             let src = URL(fileURLWithPath: resourcePath).appendingPathComponent(file)
             let dst = targetDir.appendingPathComponent(file)
@@ -279,13 +258,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
                     continue
                 }
             }
-            
-            // Special handling for config.lua: Don't overwrite if it exists
+
             if file == "lua/config.lua" && fileManager.fileExists(atPath: dst.path) {
                 print("Skipping \(file) - already exists")
                 continue
             }
-            
+
             do {
                 if fileManager.fileExists(atPath: dst.path) {
                     try fileManager.removeItem(at: dst)
@@ -296,21 +274,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             }
         }
 
-        // 4. Reload or Launch Hammerspoon
         updateStatus("Reloading Hammerspoon...")
-        
         let workspace = NSWorkspace.shared
         let runningApps = workspace.runningApplications
         let hsApp = runningApps.first { $0.bundleIdentifier == "org.hammerspoon.Hammerspoon" }
-        
+
         if hsApp != nil {
-            // Method 1: URL Scheme (like ConfigUI)
             if let url = URL(string: "hammerspoon://reloadConfig") {
                 NSWorkspace.shared.open(url)
             }
 
-            // Method 2: AppleScript (Fallback)
-            // Hammerspoon IS running. Reload config using AppleScript.
             let source = """
             tell application "Hammerspoon"
                 execute lua code "hs.reload()"
@@ -324,14 +297,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
                 }
             }
         } else {
-            // Hammerspoon is NOT running. Launch it.
             if let url = workspace.urlForApplication(withBundleIdentifier: "org.hammerspoon.Hammerspoon") {
                 workspace.open(url)
             } else if let userUrl = workspace.urlForApplication(withBundleIdentifier: "org.hammerspoon.Hammerspoon") {
-                 // Fallback check if urlForApplication finds it in user dir
                  workspace.open(userUrl)
             } else {
-                // Manual launch from user apps if workspace doesn't see it yet
                 let userAppPath = home.appendingPathComponent("Applications/Hammerspoon.app")
                 workspace.open(userAppPath)
             }
@@ -343,7 +313,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             self.installButton.isEnabled = true
             self.installButton.title = "Re-install"
             self.statusLabel.stringValue = "Success! Configuration loaded."
-            
+
             let alert = NSAlert()
             alert.messageText = "Installation Complete"
             alert.informativeText = "Your SpacePigeon configuration has been installed and Hammerspoon reloaded."
@@ -353,11 +323,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
     }
 }
 
-// Entry point
 @main
 struct AppEntry {
     static let delegate = AppDelegate()
-    
+
     static func main() {
         let app = NSApplication.shared
         app.delegate = delegate

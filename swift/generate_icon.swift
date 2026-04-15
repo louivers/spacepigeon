@@ -35,4 +35,3 @@ if let tiffData = image.tiffRepresentation,
     let url = URL(fileURLWithPath: "icon.png")
     try? pngData.write(to: url)
 }
-

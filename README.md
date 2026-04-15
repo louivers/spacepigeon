@@ -53,7 +53,7 @@ If you prefer to build it yourself:
    ```
 2. Run the build script:
    ```bash
-   ./build_app.sh
+   ./scripts/build_app.sh
    ```
 3. Open the generated app:
    ```bash
