@@ -6,6 +6,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
     var statusLabel: NSTextField!
     var installButton: NSButton!
     var editConfigButton: NSButton!
+    var logsButton: NSButton!
     var progressBar: NSProgressIndicator!
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
@@ -46,23 +47,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         contentView.addSubview(descLabel)
 
         installButton = NSButton(title: "Install & Reload", target: self, action: #selector(installClicked))
-        installButton.frame = NSMakeRect(100, 150, 200, 40)
+        installButton.frame = NSMakeRect(100, 160, 200, 40)
         installButton.bezelStyle = .rounded
         contentView.addSubview(installButton)
 
         editConfigButton = NSButton(title: "Edit Config", target: self, action: #selector(editConfigClicked))
-        editConfigButton.frame = NSMakeRect(100, 110, 200, 40)
+        editConfigButton.frame = NSMakeRect(100, 120, 200, 40)
         editConfigButton.bezelStyle = .rounded
         contentView.addSubview(editConfigButton)
 
-        progressBar = NSProgressIndicator(frame: NSMakeRect(50, 90, 300, 10))
+        logsButton = NSButton(title: "View Logs", target: self, action: #selector(logsClicked))
+        logsButton.frame = NSMakeRect(100, 80, 200, 40)
+        logsButton.bezelStyle = .rounded
+        contentView.addSubview(logsButton)
+
+        progressBar = NSProgressIndicator(frame: NSMakeRect(50, 62, 300, 10))
         progressBar.style = .bar
         progressBar.isIndeterminate = true
         progressBar.isHidden = true
         contentView.addSubview(progressBar)
 
         statusLabel = NSTextField(labelWithString: "")
-        statusLabel.frame = NSMakeRect(20, 40, 360, 20)
+        statusLabel.frame = NSMakeRect(20, 30, 360, 20)
         statusLabel.alignment = .center
         statusLabel.textColor = .secondaryLabelColor
         contentView.addSubview(statusLabel)
@@ -79,6 +85,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
+        appMenu.addItem(withTitle: "Show Logs", action: #selector(logsClicked), keyEquivalent: "l")
+        appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit SpacePigeon", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         // Edit Menu
@@ -93,6 +101,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        // `open -a SpacePigeon --args --logs` opens straight to the log window.
+        if CommandLine.arguments.contains("--logs") {
+            openLogWindow()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -101,6 +114,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
 
     @objc func editConfigClicked() {
         openConfigWindow()
+    }
+
+    @objc func logsClicked() {
+        openLogWindow()
     }
 
     @objc func installClicked() {
@@ -243,36 +260,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             return
         }
 
-        let filesToCopy = ["init.lua", "lua/layout.lua", "lua/space_utils.lua", "lua/workspaces.lua", "lua/config.lua"]
-
-        for file in filesToCopy {
-            let src = URL(fileURLWithPath: resourcePath).appendingPathComponent(file)
-            let dst = targetDir.appendingPathComponent(file)
-
-            let parentDir = dst.deletingLastPathComponent()
-            if !fileManager.fileExists(atPath: parentDir.path) {
-                do {
-                    try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
-                } catch {
-                    print("Failed to create directory \(parentDir.path): \(error)")
-                    continue
-                }
-            }
-
-            if file == "lua/config.lua" && fileManager.fileExists(atPath: dst.path) {
-                print("Skipping \(file) - already exists")
-                continue
-            }
-
-            do {
-                if fileManager.fileExists(atPath: dst.path) {
-                    try fileManager.removeItem(at: dst)
-                }
-                try fileManager.copyItem(at: src, to: dst)
-            } catch {
-                print("Failed to copy \(file): \(error)")
-            }
-        }
+        let changed = BundleInstaller.installRuntimeFiles(from: resourcePath, to: targetDir)
+        print("Installed: \(changed)")
 
         updateStatus("Reloading Hammerspoon...")
         let workspace = NSWorkspace.shared
@@ -320,6 +309,63 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
             alert.addButton(withTitle: "OK")
             alert.runModal()
         }
+    }
+}
+
+/// Copies the runtime files shipped in the app bundle (init.lua, every
+/// lua/*.lua, bin/spacectl) into ~/.hammerspoon. Shared by "Install & Reload"
+/// and the config editor's "Save & Reload", so a rebuilt app never leaves
+/// Hammerspoon running stale Lua. lua/config.lua is only installed when
+/// missing: the config editor owns it and it is never overwritten.
+enum BundleInstaller {
+    static let userConfigFile = "lua/config.lua"
+
+    static var hammerspoonDir: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hammerspoon")
+    }
+
+    /// Relative paths of the runtime files present in the bundle.
+    static func runtimeFiles(in resourcePath: String) -> [String] {
+        let fileManager = FileManager.default
+        let luaDir = (resourcePath as NSString).appendingPathComponent("lua")
+        let luaFiles = ((try? fileManager.contentsOfDirectory(atPath: luaDir)) ?? [])
+            .filter { $0.hasSuffix(".lua") }
+            .sorted()
+            .map { "lua/\($0)" }
+        let files = ["init.lua"] + luaFiles + ["bin/spacectl"] // spacectl moves windows between Spaces with SIP on
+        return files.filter { fileManager.fileExists(atPath: (resourcePath as NSString).appendingPathComponent($0)) }
+    }
+
+    /// Copies every bundled runtime file that is missing or differs from the
+    /// installed one. Returns the relative paths it wrote.
+    @discardableResult
+    static func installRuntimeFiles(from resourcePath: String? = Bundle.main.resourcePath,
+                                    to targetDir: URL = hammerspoonDir) -> [String] {
+        guard let resourcePath = resourcePath else { return [] }
+        let fileManager = FileManager.default
+        var written: [String] = []
+
+        for file in runtimeFiles(in: resourcePath) {
+            let src = URL(fileURLWithPath: resourcePath).appendingPathComponent(file)
+            let dst = targetDir.appendingPathComponent(file)
+
+            if fileManager.fileExists(atPath: dst.path) {
+                if file == userConfigFile { continue }
+                if fileManager.contentsEqual(atPath: src.path, andPath: dst.path) { continue }
+            }
+
+            do {
+                try fileManager.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+                if fileManager.fileExists(atPath: dst.path) {
+                    try fileManager.removeItem(at: dst)
+                }
+                try fileManager.copyItem(at: src, to: dst)
+                written.append(file)
+            } catch {
+                print("Failed to copy \(file): \(error)")
+            }
+        }
+        return written
     }
 }
 

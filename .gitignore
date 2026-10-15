@@ -11,3 +11,9 @@ SpacePigeon.zip
 # Cursor
 .cursor/
 
+# Swift package artifacts
+v2/.build/
+
+# spacectl helper build output
+build/
+

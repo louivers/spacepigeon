@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResetRequest",
+  "type": "object",
+  "required": ["mainSpaces", "secondarySpaces", "closeAll", "keepAliveApps", "dryRun"],
+  "properties": {
+    "mainSpaces": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "secondarySpaces": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "closeAll": {
+      "type": "boolean"
+    },
+    "keepAliveApps": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "dryRun": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

@@ -21,7 +21,22 @@ fi
 echo "Copying files..."
 mkdir -p "$TARGET_DIR/lua"
 cp "$PROJECT_ROOT/init.lua" "$TARGET_DIR/"
-cp "$PROJECT_ROOT/lua/"*.lua "$TARGET_DIR/lua/"
+for f in "$PROJECT_ROOT/lua/"*.lua; do
+    name="$(basename "$f")"
+    # Never overwrite the user's own config (the config editor writes it).
+    if [ "$name" = "config.lua" ] && [ -f "$TARGET_DIR/lua/config.lua" ]; then
+        echo "Keeping existing lua/config.lua"
+        continue
+    fi
+    cp "$f" "$TARGET_DIR/lua/"
+done
+
+echo "Building spacectl helper..."
+if ! bash "$SCRIPT_DIR/build_helper.sh" "$TARGET_DIR/bin/spacectl"; then
+    echo "Helper build failed: SpacePigeon will fall back to Mission Control and relaunching apps."
+fi
+
+echo "Reloading Hammerspoon..."
+open -g "hammerspoon://reloadConfig" || echo "Could not reload: reload Hammerspoon by hand."
 
 echo "Deployment complete!"
-echo "Hammerspoon should detect the changes and reload automatically."

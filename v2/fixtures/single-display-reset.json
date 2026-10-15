@@ -1,0 +1,13 @@
+{
+  "name": "single-display-reset",
+  "request": {
+    "mainSpaces": 4,
+    "secondarySpaces": 0,
+    "closeAll": true,
+    "keepAliveApps": ["Finder"],
+    "dryRun": true
+  },
+  "expect": {
+    "verificationSuccess": true
+  }
+}

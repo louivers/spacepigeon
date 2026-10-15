@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResetResult",
+  "type": "object",
+  "required": [
+    "request",
+    "startedAt",
+    "endedAt",
+    "capabilityReport",
+    "closedApps",
+    "forcedKilledApps",
+    "verification",
+    "recoveryActions",
+    "failures"
+  ],
+  "properties": {
+    "request": { "type": "object" },
+    "startedAt": { "type": "string" },
+    "endedAt": { "type": "string" },
+    "capabilityReport": { "type": "object" },
+    "closedApps": { "type": "array", "items": { "type": "string" } },
+    "forcedKilledApps": { "type": "array", "items": { "type": "string" } },
+    "verification": { "type": "object" },
+    "recoveryActions": { "type": "array", "items": { "type": "string" } },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message", "operation", "timestamp"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "permission",
+              "symbolMissing",
+              "dockDesync",
+              "timeout",
+              "verificationFailed",
+              "unsupportedMacOS",
+              "shellError"
+            ]
+          },
+          "message": { "type": "string" },
+          "operation": { "type": "string" },
+          "timestamp": { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

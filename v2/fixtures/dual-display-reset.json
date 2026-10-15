@@ -1,0 +1,13 @@
+{
+  "name": "dual-display-reset",
+  "request": {
+    "mainSpaces": 5,
+    "secondarySpaces": 3,
+    "closeAll": true,
+    "keepAliveApps": ["Finder", "System Settings"],
+    "dryRun": true
+  },
+  "expect": {
+    "verificationSuccess": true
+  }
+}

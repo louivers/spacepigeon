@@ -67,7 +67,11 @@ EOF
 
 # 4. Compile Swift Launcher
 echo "🔨 Compiling Swift launcher..."
-swiftc "$PROJECT_ROOT/swift/launcher.swift" "$PROJECT_ROOT/swift/ConfigUI.swift" -o "$MACOS/launcher"
+swiftc "$PROJECT_ROOT/swift/launcher.swift" "$PROJECT_ROOT/swift/ConfigUI.swift" "$PROJECT_ROOT/swift/LogUI.swift" -o "$MACOS/launcher"
+
+# 4b. Build the spacectl helper (moves windows between Spaces, SIP stays on)
+echo "🛠  Building spacectl helper..."
+bash "$SCRIPT_DIR/build_helper.sh" "$RESOURCES/bin/spacectl"
 
 # 5. Copy Resources
 echo "📦 Copying Lua sources..."
@@ -78,7 +82,18 @@ cp "$PROJECT_ROOT/lua/"*.lua "$RESOURCES/lua/"
 # 6. Ad-Hoc Signing
 echo "✍️  Signing app"
 xattr -cr "$APP_DIR"
-codesign --force --sign - "$MACOS/launcher"
+# Sign the whole bundle, not just the executable, so macOS sees a complete,
+# valid app (the helper in Resources/bin is already signed by build_helper.sh).
+codesign --force --sign - "$APP_DIR"
+
+# Tell Launch Services and Spotlight about the app, so launchers like
+# Raycast and Spotlight list it.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+"$LSREGISTER" -f "$APP_DIR" >/dev/null 2>&1 || true
+if [ -d "/Applications/${APP_NAME}.app" ]; then
+    "$LSREGISTER" -f "/Applications/${APP_NAME}.app" >/dev/null 2>&1 || true
+    mdimport "/Applications/${APP_NAME}.app" >/dev/null 2>&1 || true
+fi
 
 # 7. Zip for distribution
 echo "🤐 Zipping into ${APP_NAME}.zip..."
