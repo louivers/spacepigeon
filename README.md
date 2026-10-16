@@ -8,11 +8,21 @@
 
 Effortlessly transition between workflows. SpacePigeon instantly orchestrates your applications, windows, and displays into the perfect environment for any task with a single click or hotkey.
 
+## What's new in 2.0
+
+- **No more quitting**: apps that are already open are moved to their space instead of being closed and reopened, using the new `spacectl` helper (macOS 26.4+, SIP stays on).
+- **Native fullscreen**: put fullscreen apps exactly where you want them in the Mission Control bar.
+- **More positions**: halves, thirds, two-thirds, quarters and center.
+- **Modes per monitor count**, an optional rearrange when a monitor is plugged in or out, and **Focus When Done**.
+- **Save before quitting**, a **menu bar** preset picker, and a **log viewer** for every run.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list. Configs from 1.x keep working.
+
 ## Features
 
 - 🚀 **One-Click Setup**: Installs everything automatically. If you don't have Hammerspoon, SpacePigeon will download and install it for you.
 - 🎨 **Visual Configuration**: A full native UI to manage your workspaces. No need to touch Lua code manually.
-- 🖥 **Multi-Monitor Support**: Configure spaces and app layouts for both your Main and Secondary monitors.
+- 🖥 **Multi-Monitor Support**: Configure spaces and app layouts for both your Main and Secondary monitors. A third monitor can't hold apps yet.
 - ⚡️ **Smart App Launching**:
   - **Browser Mode**: Launch browsers with specific startup URLs.
   - **Deep Links**: Open apps to specific content (e.g., Notion pages, Spotify playlists, or custom URL schemes).
@@ -53,7 +63,7 @@ If you prefer to build it yourself:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/spacepigeon.git
+   git clone https://github.com/louivers/spacepigeon.git
    cd spacepigeon
    ```
 2. Run the build script:
@@ -133,11 +143,13 @@ lua tests/slots_sim.lua
 lua tests/structure_sim.lua
 lua tests/mcdrag_sim.lua
 lua tests/workspace_sim.lua
+lua tests/dragbench_sim.lua
 ```
 
 ## Requirements
 - **[Hammerspoon](https://www.hammerspoon.org/)** (The app will automatically download and install this to `~/Applications` if it is not found).
-- **macOS 26.4 or newer** to move windows between spaces without quitting apps. Older versions still work with the fallback.
+- **macOS 26.4 or newer** for the `spacectl` helper, which moves windows between spaces without quitting apps. On older versions SpacePigeon uses the fallback (Mission Control, and quitting and reopening an app as a last resort).
+- **Up to two monitors** for apps: Main and 2nd. A preset can have a mode for 3 connected monitors, but apps can't be placed on the third one yet.
 - **Xcode Command Line Tools** to build from source (`xcode-select --install`).
 
 ## License
