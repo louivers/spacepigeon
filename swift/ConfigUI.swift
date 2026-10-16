@@ -1,12 +1,69 @@
 import SwiftUI
 import Cocoa
+import UniformTypeIdentifiers
 
 // MARK: - Data Models
+
+/// The most monitors a preset can have spaces and apps on.
+let maxMonitors = 10
+
+/// Monitor number for a layout entry's `monitor`: "main" is 1, "secondary" is 2,
+/// and monitors 3 to 10 are stored as their number ("3").
+func monitorNumber(_ monitor: String) -> Int {
+    switch monitor {
+    case "main": return 1
+    case "secondary": return 2
+    default: return max(1, Int(monitor) ?? 1)
+    }
+}
+
+func monitorKey(_ number: Int) -> String {
+    switch number {
+    case 1: return "main"
+    case 2: return "secondary"
+    default: return String(number)
+    }
+}
+
+/// "Main", "2nd", "3rd", "4th", ...
+func monitorLabel(_ number: Int) -> String {
+    switch number {
+    case 1: return "Main"
+    case 2: return "2nd"
+    case 3: return "3rd"
+    default: return "\(number)th"
+    }
+}
+
+/// Spaces per monitor (main first) with every app on a monitor past `keep`
+/// moved to the main monitor, after its spaces, in monitor order. The same
+/// way SpacePigeon handles monitors that are not connected.
+func foldMonitors(spaces: [Int], layout: [AppLayout], keep: Int) -> (spaces: [Int], layout: [AppLayout]) {
+    guard spaces.count > keep else { return (spaces, layout) }
+    var mainTotal = spaces[0]
+    var offset: [Int: Int] = [:]
+    for n in (keep + 1)...spaces.count {
+        offset[n] = mainTotal
+        mainTotal += spaces[n - 1]
+    }
+    let folded = layout.map { app -> AppLayout in
+        var a = app
+        a.id = UUID()
+        if let o = offset[monitorNumber(a.monitor)] {
+            a.monitor = "main"
+            a.spaceIndex += o
+        }
+        return a
+    }
+    var kept = Array(spaces.prefix(keep))
+    kept[0] = mainTotal
+    return (kept, folded)
+}
 
 struct AppLayout: Codable, Identifiable, Hashable {
     var id = UUID()
     var name: String
-    var monitor: String // "main" or "secondary"
+    var monitor: String // "main", "secondary", or "3" to "10" (see monitorNumber)
     var spaceIndex: Int // 1-based index relative to the monitor
     var pos: String // "max", "fullscreen", or a part of the screen (see regions in lua/layout.lua)
     var url: String = "" // Optional URL/Deep link
@@ -54,10 +111,38 @@ struct PresetMode: Codable, Identifiable, Hashable {
     var monitors: Int
     var spaces: Int
     var secondarySpaces: Int
+    var moreSpaces: [Int] = [] // monitors 3 and up
     var layout: [AppLayout]
 
+    init(monitors: Int, spaces: Int, secondarySpaces: Int, moreSpaces: [Int] = [], layout: [AppLayout]) {
+        self.monitors = monitors
+        self.spaces = spaces
+        self.secondarySpaces = secondarySpaces
+        self.moreSpaces = moreSpaces
+        self.layout = layout
+    }
+
     enum CodingKeys: String, CodingKey {
-        case monitors, spaces, secondarySpaces, layout
+        case monitors, spaces, secondarySpaces, moreSpaces, layout
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        monitors = try container.decode(Int.self, forKey: .monitors)
+        spaces = try container.decode(Int.self, forKey: .spaces)
+        secondarySpaces = try container.decodeIfPresent(Int.self, forKey: .secondarySpaces) ?? 0
+        moreSpaces = try container.decodeIfPresent([Int].self, forKey: .moreSpaces) ?? []
+        layout = try container.decode([AppLayout].self, forKey: .layout)
+    }
+
+    /// Spaces per monitor, main first.
+    var monitorSpaces: [Int] {
+        get { [spaces, secondarySpaces] + moreSpaces }
+        set {
+            spaces = newValue.first ?? 1
+            secondarySpaces = newValue.count > 1 ? newValue[1] : 0
+            moreSpaces = Array(newValue.dropFirst(2))
+        }
     }
 
     var label: String { monitors == 1 ? "1 monitor" : "\(monitors) monitors" }
@@ -69,6 +154,7 @@ struct Preset: Codable, Identifiable, Hashable {
     var name: String
     var spaces: Int // Main monitor spaces
     var secondarySpaces: Int // Secondary monitor spaces
+    var moreSpaces: [Int] = [] // Spaces on monitors 3 and up
     var layout: [AppLayout]
     var modes: [PresetMode] // per monitor count; the fields above are the default
     var focus: String = "" // app to focus when the setup is done; empty = the first app
@@ -85,7 +171,7 @@ struct Preset: Codable, Identifiable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case key, name, spaces, secondarySpaces, layout, modes, focus
+        case key, name, spaces, secondarySpaces, moreSpaces, layout, modes, focus
     }
 
     init(from decoder: Decoder) throws {
@@ -95,6 +181,7 @@ struct Preset: Codable, Identifiable, Hashable {
         spaces = try container.decode(Int.self, forKey: .spaces)
         layout = try container.decode([AppLayout].self, forKey: .layout)
         secondarySpaces = try container.decodeIfPresent(Int.self, forKey: .secondarySpaces) ?? 0
+        moreSpaces = try container.decodeIfPresent([Int].self, forKey: .moreSpaces) ?? []
         modes = try container.decodeIfPresent([PresetMode].self, forKey: .modes) ?? []
         focus = try container.decodeIfPresent(String.self, forKey: .focus) ?? ""
     }
@@ -106,23 +193,24 @@ struct Preset: Codable, Identifiable, Hashable {
             .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
+    /// Spaces per monitor, main first.
+    var monitorSpaces: [Int] {
+        get { [spaces, secondarySpaces] + moreSpaces }
+        set {
+            spaces = newValue.first ?? 1
+            secondarySpaces = newValue.count > 1 ? newValue[1] : 0
+            moreSpaces = Array(newValue.dropFirst(2))
+        }
+    }
+
     /// A new mode for `monitors` monitors, starting from the default layout.
-    /// With one monitor, the second monitor's spaces go after the main
-    /// monitor's, the same way SpacePigeon handles a missing second monitor.
+    /// The spaces and apps of monitors past that count go after the main
+    /// monitor's, the same way SpacePigeon handles a monitor that is not connected.
     func newMode(monitors: Int) -> PresetMode {
-        guard monitors == 1 else {
-            return PresetMode(monitors: monitors, spaces: spaces, secondarySpaces: secondarySpaces, layout: layout)
-        }
-        let folded = layout.map { app -> AppLayout in
-            var a = app
-            a.id = UUID()
-            if a.monitor == "secondary" {
-                a.monitor = "main"
-                a.spaceIndex += spaces
-            }
-            return a
-        }
-        return PresetMode(monitors: 1, spaces: spaces + secondarySpaces, secondarySpaces: 0, layout: folded)
+        let folded = foldMonitors(spaces: monitorSpaces, layout: layout, keep: max(monitors, 1))
+        var mode = PresetMode(monitors: monitors, spaces: 1, secondarySpaces: 0, layout: folded.layout)
+        mode.monitorSpaces = folded.spaces
+        return mode
     }
 }
 
@@ -314,20 +402,45 @@ class ConfigManager: ObservableObject {
         config.positionNumbering = true
     }
 
+    /// A Lua string literal.
+    func luaString(_ s: String) -> String {
+        var out = "\""
+        for c in s {
+            switch c {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\r\n": out += "\\r\\n"
+            default: out.append(c)
+            }
+        }
+        return out + "\""
+    }
+
+    /// `{ main = 3, secondary = 1, [3] = 2 }`
+    func spacesLua(_ monitorSpaces: [Int]) -> String {
+        var parts = ["main = \(monitorSpaces.first ?? 1)", "secondary = \(monitorSpaces.count > 1 ? monitorSpaces[1] : 0)"]
+        for (i, n) in monitorSpaces.enumerated() where i >= 2 {
+            parts.append("[\(i + 1)] = \(n)")
+        }
+        return "{ " + parts.joined(separator: ", ") + " }"
+    }
+
     func generateLua(from config: AppConfig) -> String {
         var lua = "local M = {}\n\n"
 
         lua += "-- Apps to keep alive when switching modes (e.g. Spotify)\n"
         lua += "M.keepAlive = {\n"
         for app in config.keepAlive {
-            lua += "  \"\(app)\",\n"
+            lua += "  \(luaString(app)),\n"
         }
         lua += "}\n\n"
 
         lua += "-- Apps that get Cmd+S in each window before SpacePigeon quits them\n"
         lua += "M.saveBeforeQuit = {\n"
         for app in config.saveBeforeQuit {
-            lua += "  \"\(app)\",\n"
+            lua += "  \(luaString(app)),\n"
         }
         lua += "}\n\n"
 
@@ -349,9 +462,9 @@ class ConfigManager: ObservableObject {
         lua += "local presets = {\n"
         for preset in config.presets {
             let key = preset.key.isEmpty ? "preset_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))" : preset.key
-            lua += "  [\"\(key)\"] = {\n"
-            lua += "    name   = \"\(preset.name)\",\n"
-            lua += "    spaces = { main = \(preset.spaces), secondary = \(preset.secondarySpaces) },\n"
+            lua += "  [\(luaString(key))] = {\n"
+            lua += "    name   = \(luaString(preset.name)),\n"
+            lua += "    spaces = \(spacesLua(preset.monitorSpaces)),\n"
             lua += "    layout = {\n"
             lua += layoutLua(preset.layout, indent: "      ")
             lua += "    },\n"
@@ -359,7 +472,7 @@ class ConfigManager: ObservableObject {
                 lua += "    -- Used instead of spaces/layout above when this many monitors are connected\n"
                 lua += "    modes = {\n"
                 for mode in preset.modes {
-                    lua += "      { monitors = \(mode.monitors), spaces = { main = \(mode.spaces), secondary = \(mode.secondarySpaces) }, layout = {\n"
+                    lua += "      { monitors = \(mode.monitors), spaces = \(spacesLua(mode.monitorSpaces)), layout = {\n"
                     lua += layoutLua(mode.layout, indent: "        ")
                     lua += "      } },\n"
                 }
@@ -367,7 +480,7 @@ class ConfigManager: ObservableObject {
             }
             if !preset.focus.isEmpty {
                 lua += "    -- App to focus when the setup is done\n"
-                lua += "    focus = \"\(preset.focus)\",\n"
+                lua += "    focus = \(luaString(preset.focus)),\n"
             }
             lua += "  },\n"
         }
@@ -376,8 +489,8 @@ class ConfigManager: ObservableObject {
         lua += "M.presets = presets\n\n"
         lua += "M.bindings = {\n"
         for binding in config.bindings {
-            let modsString = binding.mods.map { "\"\($0)\"" }.joined(separator: ", ")
-            lua += "  { mods = {\(modsString)}, key = \"\(binding.key)\", preset = presets[\"\(binding.presetKey)\"] },\n"
+            let modsString = binding.mods.map { luaString($0) }.joined(separator: ", ")
+            lua += "  { mods = {\(modsString)}, key = \(luaString(binding.key)), preset = presets[\(luaString(binding.presetKey))] },\n"
         }
         lua += "}\n\n"
         lua += "return M"
@@ -386,9 +499,9 @@ class ConfigManager: ObservableObject {
 
     func layoutLua(_ layout: [AppLayout], indent: String) -> String {
         var lua = ""
-        for item in layout {
-            let urlPart = item.url.isEmpty ? "" : ", url = \"\(item.url)\""
-            lua += "\(indent){ name = \"\(item.name)\", monitor = \"\(item.monitor)\", space = \(item.spaceIndex), pos = \"\(item.pos)\"\(urlPart) },\n"
+        for item in layout where !item.name.trimmingCharacters(in: .whitespaces).isEmpty {
+            let urlPart = item.url.isEmpty ? "" : ", url = \(luaString(item.url))"
+            lua += "\(indent){ name = \(luaString(item.name)), monitor = \(luaString(item.monitor)), space = \(item.spaceIndex), pos = \(luaString(item.pos))\(urlPart) },\n"
         }
         return lua
     }
@@ -450,6 +563,16 @@ struct PresetsListView: View {
     @Binding var config: AppConfig
     @State private var selectedPresetId: UUID?
 
+    func duplicateSelected() {
+        guard let id = selectedPresetId, let index = config.presets.firstIndex(where: { $0.id == id }) else { return }
+        var copy = config.presets[index]
+        copy.id = UUID()
+        copy.key = "preset_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        copy.name += " Copy"
+        config.presets.insert(copy, at: index + 1)
+        selectedPresetId = copy.id
+    }
+
     var body: some View {
         HSplitView {
             VStack {
@@ -475,6 +598,11 @@ struct PresetsListView: View {
                             selectedPresetId = nil
                         }
                     }
+                    .disabled(selectedPresetId == nil)
+                    Button(action: duplicateSelected) {
+                        Image(systemName: "plus.square.on.square")
+                    }
+                    .help("Duplicate this preset")
                     .disabled(selectedPresetId == nil)
                     Spacer()
                 }
@@ -585,11 +713,11 @@ struct PresetEditor: View {
 
     var body: some View {
         if let i = modeIndex {
-            LayoutEditor(spaces: $preset.modes[i].spaces, secondarySpaces: $preset.modes[i].secondarySpaces,
+            LayoutEditor(monitorSpaces: $preset.modes[i].monitorSpaces,
                          layout: $preset.modes[i].layout, singleMonitor: selectedMode == 1) { header }
                 .id(selectedMode)
         } else {
-            LayoutEditor(spaces: $preset.spaces, secondarySpaces: $preset.secondarySpaces,
+            LayoutEditor(monitorSpaces: $preset.monitorSpaces,
                          layout: $preset.layout, singleMonitor: false) { header }
                 .id(0)
         }
@@ -616,7 +744,7 @@ struct PresetEditor: View {
                 .labelsHidden()
                 .fixedSize()
 
-                let missing = (1...3).filter { n in !preset.modes.contains { $0.monitors == n } }
+                let missing = (1...maxMonitors).filter { n in !preset.modes.contains { $0.monitors == n } }
                 Menu {
                     ForEach(missing, id: \.self) { n in
                         Button(n == 1 ? "1 monitor" : "\(n) monitors") {
@@ -680,7 +808,7 @@ struct PresetEditor: View {
                 : "Used when \(preset.modes[i].label) are connected."
         }
         if preset.modes.isEmpty {
-            return "Used with any number of monitors. Add a mode to use a different layout for 1, 2 or 3 monitors."
+            return "Used with any number of monitors. Add a mode to use a different layout when a given number of monitors is connected."
         }
         return "Used when no mode matches the number of connected monitors."
     }
@@ -688,26 +816,51 @@ struct PresetEditor: View {
 
 /// Spaces and apps of one layout: the preset's default or one of its modes.
 struct LayoutEditor<Header: View>: View {
-    @Binding var spaces: Int
-    @Binding var secondarySpaces: Int
+    @Binding var monitorSpaces: [Int] // main first; always at least main and 2nd
     @Binding var layout: [AppLayout]
     var singleMonitor: Bool
     @ViewBuilder var header: Header
     @State private var editingAppId: UUID? = nil
+    @State private var pickingAppId: UUID? = nil
+    @State private var draggingAppId: UUID? = nil
 
-    func moveUp(_ app: AppLayout) {
-        if let index = layout.firstIndex(where: { $0.id == app.id }), index > 0 {
-            withAnimation {
-                layout.swapAt(index, index - 1)
+    var monitorCount: Int { singleMonitor ? 1 : max(monitorSpaces.count, 2) }
+
+    func spaces(of monitor: Int) -> Int {
+        monitor <= monitorSpaces.count ? monitorSpaces[monitor - 1] : 0
+    }
+
+    func spacesBinding(_ monitor: Int) -> Binding<Int> {
+        Binding(
+            get: { spaces(of: monitor) },
+            set: { value in
+                while monitorSpaces.count < monitor { monitorSpaces.append(0) }
+                monitorSpaces[monitor - 1] = value
             }
+        )
+    }
+
+    func addMonitor() {
+        while monitorSpaces.count < 2 { monitorSpaces.append(0) }
+        monitorSpaces.append(1)
+    }
+
+    /// Removes the last monitor. Its apps go after the main monitor's spaces,
+    /// the same way SpacePigeon handles a monitor that is not connected.
+    func removeLastMonitor() {
+        let folded = foldMonitors(spaces: monitorSpaces, layout: layout, keep: monitorSpaces.count - 1)
+        withAnimation {
+            monitorSpaces = folded.spaces
+            layout = folded.layout
         }
     }
 
-    func moveDown(_ app: AppLayout) {
-        if let index = layout.firstIndex(where: { $0.id == app.id }), index < layout.count - 1 {
-            withAnimation {
-                layout.swapAt(index, index + 1)
-            }
+    func monitorTitle(_ monitor: Int) -> String {
+        if singleMonitor { return "Spaces" }
+        switch monitor {
+        case 1: return "Main Monitor Spaces"
+        case 2: return "Secondary Monitor Spaces"
+        default: return "\(monitorLabel(monitor)) Monitor Spaces"
         }
     }
 
@@ -716,35 +869,40 @@ struct LayoutEditor<Header: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
 
-                HStack(spacing: 24) {
-                    VStack(alignment: .leading) {
-                        Text(singleMonitor ? "Spaces" : "Main Monitor Spaces")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Stepper(value: $spaces, in: 1...32) {
-                            Text("\(spaces)")
-                                .font(.system(.body, design: .monospaced))
-                                .frame(minWidth: 20)
-                        }
-                    }
-
-                    if !singleMonitor {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), alignment: .leading)], alignment: .leading, spacing: 10) {
+                    ForEach(1...monitorCount, id: \.self) { monitor in
                         VStack(alignment: .leading) {
-                            Text("Secondary Monitor Spaces")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Stepper(value: $secondarySpaces, in: 0...32) {
-                                Text("\(secondarySpaces)")
+                            HStack(spacing: 4) {
+                                Text(monitorTitle(monitor))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                if monitor > 2 && monitor == monitorCount {
+                                    Button(action: removeLastMonitor) {
+                                        Image(systemName: "minus.circle")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove this monitor. Its apps go after the main monitor's spaces.")
+                                }
+                            }
+                            Stepper(value: spacesBinding(monitor), in: (monitor == 1 ? 1 : 0)...32) {
+                                Text("\(spaces(of: monitor))")
                                     .font(.system(.body, design: .monospaced))
                                     .frame(minWidth: 20)
                             }
                         }
                     }
-                    Spacer()
+                    if !singleMonitor && monitorCount < maxMonitors {
+                        Button(action: addMonitor) {
+                            Label("Add Monitor", systemImage: "plus")
+                        }
+                        .help("Add spaces and apps for monitor \(monitorCount + 1). Monitors are numbered from the main one, then left to right.")
+                    }
                 }
                 .help("Number of spaces in Mission Control: desktops and fullscreen apps together")
 
-                LayoutPreviewView(spaces: spaces, secondarySpaces: secondarySpaces, layout: layout, singleMonitor: singleMonitor)
+                LayoutPreviewView(monitorSpaces: Array((0..<monitorCount).map { spaces(of: $0 + 1) }), layout: layout, singleMonitor: singleMonitor)
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
@@ -757,7 +915,9 @@ struct LayoutEditor<Header: View>: View {
                     .font(.headline)
                 Spacer()
                 Button(action: {
-                    layout.append(AppLayout(name: "New App", monitor: "main", spaceIndex: 1, pos: "max"))
+                    let new = AppLayout(name: "", monitor: "main", spaceIndex: 1, pos: "max")
+                    layout.append(new)
+                    pickingAppId = new.id
                 }) {
                     Label("Add App", systemImage: "plus")
                 }
@@ -773,126 +933,185 @@ struct LayoutEditor<Header: View>: View {
                     }
 
                     ForEach($layout) { $app in
-                        HStack(spacing: 12) {
-                            VStack(spacing: 4) {
-                                Button(action: { moveUp(app) }) {
-                                    Image(systemName: "chevron.up")
-                                        .font(.system(size: 9, weight: .bold))
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(layout.first?.id == app.id)
-                                .opacity(layout.first?.id == app.id ? 0.3 : 0.8)
-
-                                Button(action: { moveDown(app) }) {
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 9, weight: .bold))
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(layout.last?.id == app.id)
-                                .opacity(layout.last?.id == app.id ? 0.3 : 0.8)
-                            }
-                            .frame(width: 16)
-
-                            HStack(spacing: 8) {
-                                Image(systemName: "app.fill")
-                                    .foregroundColor(.secondary)
-                                MinimalistTextField(placeholder: "App Name", text: $app.name)
-                                    .font(.system(size: 14, weight: .medium))
-
-                                Button(action: { editingAppId = app.id }) {
-                                    Image(systemName: "gearshape.fill")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(app.isBrowser ? .accentColor : .secondary.opacity(0.7))
-                                }
-                                .buttonStyle(.plain)
-                                .popover(isPresented: Binding(
-                                    get: { editingAppId == app.id },
-                                    set: { if !$0 { editingAppId = nil } }
-                                )) {
-                                     AppSettingsView(app: $app)
-                                }
-                            }
-                            .frame(width: 160, alignment: .leading)
-
-                            Divider()
-                                .frame(height: 20)
-
-                            if !singleMonitor {
-                                Picker("", selection: $app.monitor) {
-                                    Text("Main").tag("main")
-                                    Text("2nd").tag("secondary")
-                                }
-                                .frame(width: 75)
-                                .labelsHidden()
-                            }
-
-                            let maxSpaces = app.monitor == "main" ? spaces : max(1, secondarySpaces)
-                            HStack(spacing: 2) {
-                                Text("Sp")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Stepper("", value: $app.spaceIndex, in: 1...maxSpaces)
-                                    .labelsHidden()
-                                Text("\(app.spaceIndex)")
-                                    .font(.system(.body, design: .monospaced))
-                                    .frame(width: 20, alignment: .center)
-                            }
-                            // Position in Mission Control, desktops and fullscreen apps counted together.
-                            .help(app.pos == "fullscreen" ? "Position of this fullscreen app in Mission Control, counting desktops and fullscreen apps from the left" : "Position of this app's desktop in Mission Control, counting desktops and fullscreen apps from the left")
-
-                            Picker("", selection: $app.pos) {
-                                Label("Max", systemImage: "rectangle.fill").tag("max")
-                                Label("Fullscreen", systemImage: "arrow.up.left.and.arrow.down.right").tag("fullscreen")
-                                Divider()
-                                Label("Left", systemImage: "rectangle.lefthalf.inset.filled").tag("left")
-                                Label("Right", systemImage: "rectangle.righthalf.inset.filled").tag("right")
-                                Label("Top", systemImage: "rectangle.tophalf.inset.filled").tag("top")
-                                Label("Bottom", systemImage: "rectangle.bottomhalf.inset.filled").tag("bottom")
-                                Divider()
-                                Label("Left Third", systemImage: "rectangle.leadingthird.inset.filled").tag("left-third")
-                                Label("Center Third", systemImage: "rectangle.split.3x1").tag("center-third")
-                                Label("Right Third", systemImage: "rectangle.trailingthird.inset.filled").tag("right-third")
-                                Label("Left Two Thirds", systemImage: "rectangle.leadinghalf.inset.filled").tag("left-two-thirds")
-                                Label("Right Two Thirds", systemImage: "rectangle.trailinghalf.inset.filled").tag("right-two-thirds")
-                                Divider()
-                                Label("Top Left", systemImage: "rectangle.inset.topleft.filled").tag("top-left")
-                                Label("Top Right", systemImage: "rectangle.inset.topright.filled").tag("top-right")
-                                Label("Bottom Left", systemImage: "rectangle.inset.bottomleft.filled").tag("bottom-left")
-                                Label("Bottom Right", systemImage: "rectangle.inset.bottomright.filled").tag("bottom-right")
-                                Divider()
-                                Label("Center", systemImage: "rectangle.center.inset.filled").tag("center")
-                            }
-                            .frame(width: 150)
-                            .labelsHidden()
-
-                            Spacer()
-
-                            Button(action: {
-                                if let index = layout.firstIndex(where: { $0.id == app.id }) {
-                                    layout.remove(at: index)
-                                }
-                            }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.red.opacity(0.8))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 12)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.black.opacity(0.1), lineWidth: 0.5)
-                        )
+                        appRow($app)
+                            .onDrop(of: [UTType.text], delegate: AppRowDropDelegate(target: app.id, layout: $layout, dragging: $draggingAppId))
                     }
                 }
                 .padding(1)
+            }
+            // Dropping between rows or below the last one also ends the drag.
+            .onDrop(of: [UTType.text], isTargeted: nil) { _ in
+                draggingAppId = nil
+                return true
             }
         }
         .onTapGesture {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
+    }
+
+    func appRow(_ app: Binding<AppLayout>) -> some View {
+        let a = app.wrappedValue
+        return HStack(spacing: 12) {
+            DragHandle()
+                .onDrag {
+                    draggingAppId = a.id
+                    return NSItemProvider(object: a.id.uuidString as NSString)
+                }
+                .help("Drag to reorder")
+
+            HStack(spacing: 8) {
+                AppIconView(name: a.name)
+                MinimalistTextField(placeholder: "App Name", text: app.name)
+                    .font(.system(size: 14, weight: .medium))
+
+                Button(action: { pickingAppId = a.id }) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+                .help("Choose from your apps")
+                .popover(isPresented: Binding(
+                    get: { pickingAppId == a.id },
+                    set: { if !$0 { pickingAppId = nil } }
+                )) {
+                    AppPickerView { name in
+                        app.wrappedValue.name = name
+                        pickingAppId = nil
+                    }
+                }
+
+                Button(action: { editingAppId = a.id }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(a.isBrowser ? .accentColor : .secondary.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: Binding(
+                    get: { editingAppId == a.id },
+                    set: { if !$0 { editingAppId = nil } }
+                )) {
+                    AppSettingsView(app: app)
+                }
+            }
+            .frame(width: 200, alignment: .leading)
+
+            Divider()
+                .frame(height: 20)
+
+            if !singleMonitor {
+                Picker("", selection: app.monitor) {
+                    ForEach(1...monitorCount, id: \.self) { n in
+                        Text(monitorLabel(n)).tag(monitorKey(n))
+                    }
+                }
+                .frame(width: 75)
+                .labelsHidden()
+            }
+
+            let maxSpaces = max(1, spaces(of: monitorNumber(a.monitor)))
+            HStack(spacing: 2) {
+                Text("Sp")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Stepper("", value: app.spaceIndex, in: 1...max(maxSpaces, a.spaceIndex))
+                    .labelsHidden()
+                Text("\(a.spaceIndex)")
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 20, alignment: .center)
+            }
+            // Position in Mission Control, desktops and fullscreen apps counted together.
+            .help(a.pos == "fullscreen" ? "Position of this fullscreen app in Mission Control, counting desktops and fullscreen apps from the left" : "Position of this app's desktop in Mission Control, counting desktops and fullscreen apps from the left")
+
+            Picker("", selection: app.pos) {
+                Label("Max", systemImage: "rectangle.fill").tag("max")
+                Label("Fullscreen", systemImage: "arrow.up.left.and.arrow.down.right").tag("fullscreen")
+                Divider()
+                Label("Left", systemImage: "rectangle.lefthalf.inset.filled").tag("left")
+                Label("Right", systemImage: "rectangle.righthalf.inset.filled").tag("right")
+                Label("Top", systemImage: "rectangle.tophalf.inset.filled").tag("top")
+                Label("Bottom", systemImage: "rectangle.bottomhalf.inset.filled").tag("bottom")
+                Divider()
+                Label("Left Third", systemImage: "rectangle.leadingthird.inset.filled").tag("left-third")
+                Label("Center Third", systemImage: "rectangle.split.3x1").tag("center-third")
+                Label("Right Third", systemImage: "rectangle.trailingthird.inset.filled").tag("right-third")
+                Label("Left Two Thirds", systemImage: "rectangle.leadinghalf.inset.filled").tag("left-two-thirds")
+                Label("Right Two Thirds", systemImage: "rectangle.trailinghalf.inset.filled").tag("right-two-thirds")
+                Divider()
+                Label("Top Left", systemImage: "rectangle.inset.topleft.filled").tag("top-left")
+                Label("Top Right", systemImage: "rectangle.inset.topright.filled").tag("top-right")
+                Label("Bottom Left", systemImage: "rectangle.inset.bottomleft.filled").tag("bottom-left")
+                Label("Bottom Right", systemImage: "rectangle.inset.bottomright.filled").tag("bottom-right")
+                Divider()
+                Label("Center", systemImage: "rectangle.center.inset.filled").tag("center")
+            }
+            .frame(width: 150)
+            .labelsHidden()
+
+            Spacer()
+
+            Button(action: {
+                if let index = layout.firstIndex(where: { $0.id == a.id }) {
+                    layout.remove(at: index)
+                }
+            }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 12))
+                    .foregroundColor(.red.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.black.opacity(0.1), lineWidth: 0.5)
+        )
+    }
+}
+
+/// The three lines a row is dragged by.
+struct DragHandle: View {
+    @State private var hovering = false
+
+    var body: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.secondary.opacity(hovering ? 1 : 0.6))
+            .frame(width: 16, height: 24)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                hovering = inside
+                if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+            }
+    }
+}
+
+/// Moves the dragged row to the row it is dragged over, so the list
+/// reorders live while dragging.
+struct AppRowDropDelegate: DropDelegate {
+    let target: UUID
+    @Binding var layout: [AppLayout]
+    @Binding var dragging: UUID?
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged = dragging, dragged != target,
+              let from = layout.firstIndex(where: { $0.id == dragged }),
+              let to = layout.firstIndex(where: { $0.id == target }) else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            layout.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
     }
 }
 
@@ -1053,6 +1272,7 @@ struct AppListEditor: View {
     let placeholder: String
     @Binding var apps: [String]
     @State private var newAppName: String = ""
+    @State private var picking = false
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -1067,6 +1287,7 @@ struct AppListEditor: View {
             List {
                 ForEach(apps, id: \.self) { appName in
                     HStack {
+                        AppIconView(name: appName, size: 16)
                         Text(appName)
                         Spacer()
                         Button(action: {
@@ -1091,6 +1312,15 @@ struct AppListEditor: View {
 
                 Button("Add", action: add)
                     .disabled(newAppName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button("Choose…") { picking = true }
+                    .help("Choose from your apps")
+                    .popover(isPresented: $picking) {
+                        AppPickerView { name in
+                            if !apps.contains(name) { apps.append(name) }
+                            picking = false
+                        }
+                    }
             }
         }
     }
@@ -1167,16 +1397,20 @@ func spacesPreview(total: Int, apps: [AppLayout]) -> LayoutPreview {
 }
 
 struct LayoutPreviewView: View {
-    var spaces: Int
-    var secondarySpaces: Int
+    var monitorSpaces: [Int] // main first
     var layout: [AppLayout]
     var singleMonitor: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            row("Main", spacesPreview(total: spaces, apps: layout.filter { $0.monitor == "main" }))
-            if !singleMonitor && (secondarySpaces > 0 || layout.contains(where: { $0.monitor == "secondary" })) {
-                row("2nd", spacesPreview(total: secondarySpaces, apps: layout.filter { $0.monitor == "secondary" }))
+            row("Main", spacesPreview(total: monitorSpaces.first ?? 1, apps: layout.filter { monitorNumber($0.monitor) == 1 }))
+            if !singleMonitor {
+                ForEach(Array(monitorSpaces.indices.dropFirst()), id: \.self) { i in
+                    let apps = layout.filter { monitorNumber($0.monitor) == i + 1 }
+                    if monitorSpaces[i] > 0 || !apps.isEmpty {
+                        row(monitorLabel(i + 1), spacesPreview(total: monitorSpaces[i], apps: apps))
+                    }
+                }
             }
         }
     }
