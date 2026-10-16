@@ -123,18 +123,25 @@ end
 -- The running app with exactly this name (case does not matter), or nil.
 -- hs.application.get can return another app: for "Cursor" it returned
 -- Apple's CursorUIViewService while the Cursor editor was not running.
+-- The running app with this name. The name in a preset can also be the
+-- app's file name, which the app picker uses and `open -a` understands, but
+-- which is not always the name the app runs under ("Visual Studio Code" runs
+-- as "Code").
 local function findApp(name)
   if not name then return nil end
   local wanted = name:lower()
-  local other = nil
+  local other, byFile = nil, nil
   for _, a in ipairs(hs.application.runningApplications()) do
     local n = a:name()
     if n and n:lower() == wanted then
       if a:kind() == 1 then return a end
       other = other or a
+    elseif not byFile and a.path and a:kind() == 1 then
+      local file = (a:path() or ""):match("([^/]+)%.app/?$")
+      if file and file:lower() == wanted then byFile = a end
     end
   end
-  return other
+  return other or byFile
 end
 M.findApp = findApp
 
