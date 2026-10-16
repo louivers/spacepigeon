@@ -65,3 +65,4 @@ check("winner never split", md:match("\n| 1 | [^|]+ | %d+ | %d+ | 0 | 0 | 0 |") 
 if not smoke then check("all moves were tried", md:find("not possible here") == nil) end
 print(string.format("%d drags, %d repairs", rows - 1, repairs))
 print(failures == 0 and "\ndrag test sim passes" or ("\n" .. failures .. " check(s) failed"))
+os.exit(failures == 0 and 0 or 1)
