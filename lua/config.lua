@@ -20,6 +20,8 @@ local presets = {
     -- Optional: the app to focus when the setup is done. Without it, the
     -- first app on the main monitor's first space gets focus.
     -- focus = "Terminal",
+    -- Monitors 3 to 10: spaces = { main = 2, secondary = 1, [3] = 1 } and
+    -- monitor = "3" in a layout entry.
     -- Optional: a different layout per number of connected monitors. The
     -- mode matching the current count is used; otherwise spaces/layout above.
     -- modes = {

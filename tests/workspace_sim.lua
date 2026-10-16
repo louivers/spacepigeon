@@ -184,7 +184,8 @@ end
 -- Terminal is not running and belongs on desktop 2; Discord is running and
 -- not in the preset, so it should be quit. Notes is set on the second
 -- monitor, which is not connected: its one space goes after the main
--- monitor's two, so Notes still ends up on desktop 3.
+-- monitor's two, so Notes still ends up on desktop 3. Music is on the third
+-- monitor, also not connected, so its space comes after that: desktop 4.
 package.preload["lua.config"] = function()
   local presets = {
     -- Only here so the menu bar has two presets to sort.
@@ -195,10 +196,11 @@ package.preload["lua.config"] = function()
     },
     work = {
       name = "Work",
-      spaces = { main = 2, secondary = 1 },
+      spaces = { main = 2, secondary = 1, [3] = 1 },
       layout = {
         { name = "Terminal", monitor = "main", space = 2, pos = "left" },
         { name = "Notes",    monitor = "secondary", space = 1, pos = "max" },
+        { name = "Music",    monitor = "3", space = 1, pos = "max" },
       },
       -- Only one monitor is connected, so this mode must be ignored.
       modes = {
@@ -239,7 +241,8 @@ local desktops = {}
 for _, s in ipairs(spacesList) do if s.type == "user" then table.insert(desktops, s.id) end end
 
 local checks = {
-  { "three desktops exist", #desktops == 3 },
+  { "four desktops exist", #desktops == 4 },
+  { "Music (3rd monitor) launched on desktop 4", apps.Music and winSpace[apps.Music._wins[1]._id] == desktops[4] },
   { "Discord was quit", killed[1] == "Discord" and #killed == 1 },
   { "Notes kept running (not relaunched)", notes._running and #notes._wins == 1 },
   { "Notes window moved to desktop 3", winSpace[notesWin._id] == desktops[3] },

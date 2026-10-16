@@ -175,11 +175,26 @@ local function focusApp(name)
   return true
 end
 
+-- Spaces per monitor, as a list: { main, secondary, [3], ... }. A plain
+-- number is the main monitor's count.
 local function desktopCounts(targetSpaces)
-  if type(targetSpaces) == "table" then
-    return targetSpaces.main or 0, targetSpaces.secondary or 0
+  local totals = {}
+  if type(targetSpaces) ~= "table" then
+    totals[1] = targetSpaces or 0
+    return totals
   end
-  return targetSpaces or 0, 0
+  totals[1] = targetSpaces.main or targetSpaces[1] or 0
+  totals[2] = targetSpaces.secondary or targetSpaces[2] or 0
+  for k, v in pairs(targetSpaces) do
+    if math.type(k) == "integer" and k > 2 then totals[k] = v end
+  end
+  return totals
+end
+
+local function monitorName(i)
+  if i == 1 then return "main" end
+  if i == 2 then return "secondary" end
+  return i .. (i == 3 and "rd" or "th")
 end
 
 local function runSetup(modeName, targetSpaces, layoutConfig, opts)
@@ -207,47 +222,56 @@ local function runSetup(modeName, targetSpaces, layoutConfig, opts)
   -- in a copy, `space` is the desktop number (normal apps) or the desktop a
   -- fullscreen app comes after (0 = before desktop 1); `slot` is the number
   -- from the preset.
-  local mainTotal, secondaryTotal = desktopCounts(targetSpaces)
+  local totals = desktopCounts(targetSpaces)
   local screens = spaceUtils.getOrderedScreens()
 
-  -- No second monitor connected: its spaces go after the main monitor's,
+  local last = #screens
+  for i in pairs(totals) do if i > last then last = i end end
+  for _, entry in ipairs(layoutConfig) do
+    local i = spaceUtils.monitorIndex(entry.monitor)
+    if i > last then last = i end
+  end
+  for i = 1, last do totals[i] = totals[i] or 0 end
+
+  -- A monitor that is not connected: its spaces go after the main monitor's,
   -- in the same order, and its apps move along with them.
   local entries = layoutConfig
-  local hasSecondary = secondaryTotal > 0
-  for _, entry in ipairs(layoutConfig) do
-    if entry.monitor == "secondary" then hasSecondary = true end
-  end
-  if not screens[2] and hasSecondary then
-    entries = {}
-    local movedApps = {}
-    for _, entry in ipairs(layoutConfig) do
-      if entry.monitor == "secondary" then
-        local c = {}
-        for k, v in pairs(entry) do c[k] = v end
-        c.monitor = "main"
-        c.space = (tonumber(entry.space) or 1) + mainTotal
-        table.insert(entries, c)
-        table.insert(movedApps, entry.name)
-      else
-        table.insert(entries, entry)
-      end
+  for i = 2, last do
+    local used = totals[i] > 0
+    for _, entry in ipairs(entries) do
+      if spaceUtils.monitorIndex(entry.monitor) == i then used = true end
     end
-    log.info(string.format("No second monitor: its %d space(s) go after the %d of the main monitor",
-      secondaryTotal, mainTotal), { apps = movedApps })
-    mainTotal = mainTotal + secondaryTotal
-    secondaryTotal = 0
+    if not screens[i] and used then
+      local folded, movedApps = {}, {}
+      for _, entry in ipairs(entries) do
+        if spaceUtils.monitorIndex(entry.monitor) == i then
+          local c = {}
+          for k, v in pairs(entry) do c[k] = v end
+          c.monitor = "main"
+          c.space = (tonumber(entry.space) or 1) + totals[1]
+          table.insert(folded, c)
+          table.insert(movedApps, entry.name)
+        else
+          table.insert(folded, entry)
+        end
+      end
+      log.info(string.format("No %s monitor: its %d space(s) go after the %d of the main monitor",
+        monitorName(i), totals[i], totals[1]), { apps = movedApps })
+      entries = folded
+      totals[1] = totals[1] + totals[i]
+      totals[i] = 0
+    end
   end
 
-  local monitors = {
-    { key = "main", total = mainTotal, screen = screens[1], fullscreen = {} },
-    { key = "secondary", total = secondaryTotal, screen = screens[2], fullscreen = {} },
-  }
-  local byKey = { main = monitors[1], secondary = monitors[2] }
+  local monitors = {}
+  for i = 1, last do
+    monitors[i] = { key = monitorName(i), total = totals[i], screen = screens[i], fullscreen = {} }
+  end
 
-  for _, m in ipairs(monitors) do
+  for i, m in ipairs(monitors) do
     local mine = {}
     for _, entry in ipairs(entries) do
-      if (entry.monitor or "main") == m.key then table.insert(mine, entry) end
+      if spaceUtils.monitorIndex(entry.monitor) == i then table.insert(mine, entry) end
     end
     m.resolved = slots.resolve(mine, m.total, config.numbering)
     m.count = m.resolved.desktops
@@ -267,7 +291,7 @@ local function runSetup(modeName, targetSpaces, layoutConfig, opts)
 
   local normalEntries = {}
   for _, entry in ipairs(entries) do
-    local m = byKey[entry.monitor or "main"] or monitors[1]
+    local m = monitors[spaceUtils.monitorIndex(entry.monitor)] or monitors[1]
     if entry.pos == "fullscreen" then
       table.insert(m.fullscreen, copyWith(entry, m.resolved.afterOf[entry]))
     else

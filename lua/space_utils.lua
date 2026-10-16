@@ -55,12 +55,19 @@ function M.getOrderedScreens()
   return result
 end
 
+-- Monitor number in the config: "main" (or nil) is 1, "secondary" is 2, and
+-- monitors 3 to 10 are their number ("3" or 3).
+function M.monitorIndex(monitor)
+  if monitor == nil or monitor == "main" then return 1 end
+  if monitor == "secondary" then return 2 end
+  local n = math.tointeger(tonumber(monitor))
+  if n and n >= 1 then return n end
+  return 1
+end
+
+-- The screen for a monitor in the config, or nil when it is not connected.
 function M.screenForMonitor(monitorType)
-  local screens = M.getOrderedScreens()
-  if monitorType == "secondary" then
-    return screens[2]
-  end
-  return screens[1]
+  return M.getOrderedScreens()[M.monitorIndex(monitorType)]
 end
 
 -- Normal desktops only. Fullscreen app Spaces are left out, so "space 2" in
@@ -162,12 +169,9 @@ end
 
 function M.ensureSpaces(monitorType, n)
   local screen = M.screenForMonitor(monitorType)
-  if monitorType == "secondary" and #M.getOrderedScreens() < 2 then
-    screen = nil
-  end
 
   if not screen then
-    if monitorType == "secondary" and n == 0 then
+    if M.monitorIndex(monitorType) > 1 and n == 0 then
       return true
     end
     hs.alert.show("Monitor " .. monitorType .. " not found")
