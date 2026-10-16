@@ -145,6 +145,7 @@ lua tests/mcdrag_sim.lua
 lua tests/workspace_sim.lua
 lua tests/dragbench_sim.lua
 ```
+GitHub Actions runs them on every push and pull request.
 
 ## Requirements
 - **[Hammerspoon](https://www.hammerspoon.org/)** (The app will automatically download and install this to `~/Applications` if it is not found).

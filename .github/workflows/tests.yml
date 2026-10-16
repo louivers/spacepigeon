@@ -1,0 +1,22 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lua:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.4
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - name: Run simulation tests
+        run: |
+          status=0
+          for f in tests/*.lua; do
+            echo "::group::$f"
+            lua5.4 "$f" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
