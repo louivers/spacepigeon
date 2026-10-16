@@ -13,8 +13,9 @@ Effortlessly transition between workflows. SpacePigeon instantly orchestrates yo
 - **No more quitting**: apps that are already open are moved to their space instead of being closed and reopened, using the new `spacectl` helper (macOS 26.4+, SIP stays on).
 - **Native fullscreen**: put fullscreen apps exactly where you want them in the Mission Control bar.
 - **More positions**: halves, thirds, two-thirds, quarters and center.
-- **Modes per monitor count**, an optional rearrange when a monitor is plugged in or out, and **Focus When Done**.
+- **Up to 10 monitors**, **modes per monitor count**, an optional rearrange when a monitor is plugged in or out, and **Focus When Done**.
 - **Save before quitting**, a **menu bar** preset picker, and a **log viewer** for every run.
+- **App picker** with your installed apps, and **drag and drop** to reorder apps.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list. Configs from 1.x keep working.
 
@@ -22,7 +23,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list. Configs from 1.x keep workin
 
 - 🚀 **One-Click Setup**: Installs everything automatically. If you don't have Hammerspoon, SpacePigeon will download and install it for you.
 - 🎨 **Visual Configuration**: A full native UI to manage your workspaces. No need to touch Lua code manually.
-- 🖥 **Multi-Monitor Support**: Configure spaces and app layouts for both your Main and Secondary monitors. A third monitor can't hold apps yet.
+- 🖥 **Multi-Monitor Support**: Configure spaces and app layouts for up to 10 monitors.
 - ⚡️ **Smart App Launching**:
   - **Browser Mode**: Launch browsers with specific startup URLs.
   - **Deep Links**: Open apps to specific content (e.g., Notion pages, Spotify playlists, or custom URL schemes).
@@ -81,12 +82,12 @@ Launch SpacePigeon and click **"Edit Config"** to open the configuration editor.
 
 ### Presets Tab
 Manage your workspace layouts here.
-- **Spaces**: How many spaces you want on your Main and Secondary monitors, counting desktops and fullscreen apps together (what you see in the Mission Control bar). Every space without a fullscreen app is a desktop. If something clashes (two fullscreen apps on one number, an app past the last space), a warning shows under the counts.
-- **Modes**: Give a preset a different layout for 1, 2 or 3 connected monitors with **Add Mode**. When you trigger the preset, SpacePigeon uses the mode for the number of monitors connected right now, or the **Default** layout if there is none. A new mode starts as a copy of the default; a 1-monitor mode puts the second monitor's spaces after the main monitor's.
+- **Spaces**: How many spaces you want on each monitor (**Add Monitor** adds a third and more, up to 10; monitors are numbered from the main one, then left to right), counting desktops and fullscreen apps together (what you see in the Mission Control bar). Every space without a fullscreen app is a desktop. If something clashes (two fullscreen apps on one number, an app past the last space), a warning shows under the counts.
+- **Modes**: Give a preset a different layout for a given number of connected monitors with **Add Mode**. When you trigger the preset, SpacePigeon uses the mode for the number of monitors connected right now, or the **Default** layout if there is none. A new mode starts as a copy of the default; the spaces of monitors past the mode's count go after the main monitor's. SpacePigeon does the same when a monitor in the layout is not connected.
 - **Focus When Done**: The app that has focus when the setup is complete. SpacePigeon switches to the space with that app's window. **First app** (the default) focuses the first app on the main monitor's first space.
-- **Applications Layout**: Add apps to the list.
-  - **Name**: The application name (e.g., "Safari", "Terminal").
-  - **Monitor**: Choose "Main" or "2nd".
+- **Applications Layout**: Add apps to the list. Drag a row by its handle (☰) to reorder.
+  - **Name**: The application name (e.g., "Safari", "Terminal"). Click the magnifying glass to pick from your installed apps.
+  - **Monitor**: Choose "Main", "2nd", "3rd" and so on.
   - **Space**: Where the app goes in Mission Control, counting desktops and fullscreen apps together from the left. Example with 5 spaces: Brave fullscreen at 1 and Cursor at 3 gives *Brave, Desktop, Desktop with Cursor, Desktop, Desktop*.
   - **Position**: Maximize, Fullscreen, a half (left, right, top, bottom), a third or two-thirds, a quarter, or Center. A fullscreen app takes its space for itself.
   - **Gear Icon ⚙️**: Access advanced settings:
@@ -150,7 +151,6 @@ GitHub Actions runs them on every push and pull request.
 ## Requirements
 - **[Hammerspoon](https://www.hammerspoon.org/)** (The app will automatically download and install this to `~/Applications` if it is not found).
 - **macOS 26.4 or newer** for the `spacectl` helper, which moves windows between spaces without quitting apps. On older versions SpacePigeon uses the fallback (Mission Control, and quitting and reopening an app as a last resort).
-- **Up to two monitors** for apps: Main and 2nd. A preset can have a mode for 3 connected monitors, but apps can't be placed on the third one yet.
 - **Xcode Command Line Tools** to build from source (`xcode-select --install`).
 
 ## License
