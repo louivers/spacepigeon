@@ -60,6 +60,18 @@ enum InstalledApps {
         return apps
     }
 
+    private static var icons: [String: NSImage] = [:]
+
+    /// The icon of the installed app with this name, cached: views redraw often.
+    static func icon(named name: String) -> NSImage? {
+        let key = name.lowercased()
+        if let icon = icons[key] { return icon }
+        guard let url = url(named: name) else { return nil }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        icons[key] = icon
+        return icon
+    }
+
     static func url(named name: String) -> URL? {
         let wanted = name.lowercased()
         return all().first { $0.name.lowercased() == wanted }?.url
@@ -86,8 +98,8 @@ struct AppIconView: View {
     var size: CGFloat = 18
 
     var body: some View {
-        if let url = InstalledApps.url(named: name) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+        if let icon = InstalledApps.icon(named: name) {
+            Image(nsImage: icon)
                 .resizable()
                 .frame(width: size, height: size)
         } else {

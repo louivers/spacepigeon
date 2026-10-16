@@ -1,6 +1,5 @@
 import SwiftUI
 import Cocoa
-import UniformTypeIdentifiers
 
 // MARK: - Data Models
 
@@ -822,7 +821,50 @@ struct LayoutEditor<Header: View>: View {
     @ViewBuilder var header: Header
     @State private var editingAppId: UUID? = nil
     @State private var pickingAppId: UUID? = nil
-    @State private var draggingAppId: UUID? = nil
+    // Kept in @State but not observed here: only RowDragEffect observes it,
+    // so moving the mouse redraws the dragged row's offset, not the editor.
+    @State private var drag = RowDragState()
+    @State private var rowHeight: CGFloat = 50
+    private let rowSpacing: CGFloat = 10
+
+    /// Drags a row by its handle: the whole row follows the mouse, and it
+    /// takes the next slot as soon as it is more than halfway over it.
+    func dragGesture(for id: UUID) -> some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named("appList"))
+            .onChanged { value in
+                if drag.id != id {
+                    drag.id = id
+                    drag.shift = 0
+                }
+                guard var index = layout.firstIndex(where: { $0.id == id }) else { return }
+                let step = rowHeight + rowSpacing
+                var offset = value.translation.height - drag.shift
+                while offset > step / 2 && index < layout.count - 1 {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        layout.swapAt(index, index + 1)
+                    }
+                    index += 1
+                    drag.shift += step
+                    offset -= step
+                }
+                while offset < -step / 2 && index > 0 {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        layout.swapAt(index, index - 1)
+                    }
+                    index -= 1
+                    drag.shift -= step
+                    offset += step
+                }
+                drag.offset = offset
+            }
+            .onEnded { _ in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    drag.offset = 0
+                    drag.id = nil
+                }
+                drag.shift = 0
+            }
+    }
 
     var monitorCount: Int { singleMonitor ? 1 : max(monitorSpaces.count, 2) }
 
@@ -925,7 +967,7 @@ struct LayoutEditor<Header: View>: View {
             }
 
             ScrollView {
-                VStack(spacing: 10) {
+                VStack(spacing: rowSpacing) {
                     if layout.isEmpty {
                         Text("No apps configured")
                             .foregroundColor(.secondary)
@@ -934,15 +976,14 @@ struct LayoutEditor<Header: View>: View {
 
                     ForEach($layout) { $app in
                         appRow($app)
-                            .onDrop(of: [UTType.text], delegate: AppRowDropDelegate(target: app.id, layout: $layout, dragging: $draggingAppId))
+                            .background(GeometryReader { geo in
+                                Color.clear.onAppear { rowHeight = geo.size.height }
+                            })
+                            .modifier(RowDragEffect(drag: drag, id: app.id))
                     }
                 }
                 .padding(1)
-            }
-            // Dropping between rows or below the last one also ends the drag.
-            .onDrop(of: [UTType.text], isTargeted: nil) { _ in
-                draggingAppId = nil
-                return true
+                .coordinateSpace(name: "appList")
             }
         }
         .onTapGesture {
@@ -954,10 +995,7 @@ struct LayoutEditor<Header: View>: View {
         let a = app.wrappedValue
         return HStack(spacing: 12) {
             DragHandle()
-                .onDrag {
-                    draggingAppId = a.id
-                    return NSItemProvider(object: a.id.uuidString as NSString)
-                }
+                .gesture(dragGesture(for: a.id))
                 .help("Drag to reorder")
 
             HStack(spacing: 8) {
@@ -1072,6 +1110,35 @@ struct LayoutEditor<Header: View>: View {
     }
 }
 
+/// The row being dragged and how far it is from its slot in the list, so it
+/// stays under the mouse while the rows around it move.
+final class RowDragState: ObservableObject {
+    @Published var id: UUID?
+    @Published var offset: CGFloat = 0
+    /// Translation already used up by moving the row to other slots.
+    var shift: CGFloat = 0
+}
+
+/// Lifts the dragged row and moves it with the mouse. Only this modifier
+/// observes the drag, so the row's contents are not redrawn while it moves.
+struct RowDragEffect: ViewModifier {
+    @ObservedObject var drag: RowDragState
+    let id: UUID
+
+    func body(content: Content) -> some View {
+        let dragging = drag.id == id
+        return content
+            .scaleEffect(dragging ? 1.02 : 1)
+            .shadow(color: .black.opacity(dragging ? 0.35 : 0), radius: 8, y: 3)
+            .offset(y: dragging ? drag.offset : 0)
+            .zIndex(dragging ? 1 : 0)
+            // The row being dragged jumps to its new slot without animating,
+            // while its offset jumps back by the same amount, so it stays
+            // under the mouse.
+            .transaction { if dragging && drag.offset != 0 { $0.animation = nil } }
+    }
+}
+
 /// The three lines a row is dragged by.
 struct DragHandle: View {
     @State private var hovering = false
@@ -1086,32 +1153,6 @@ struct DragHandle: View {
                 hovering = inside
                 if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
             }
-    }
-}
-
-/// Moves the dragged row to the row it is dragged over, so the list
-/// reorders live while dragging.
-struct AppRowDropDelegate: DropDelegate {
-    let target: UUID
-    @Binding var layout: [AppLayout]
-    @Binding var dragging: UUID?
-
-    func dropEntered(info: DropInfo) {
-        guard let dragged = dragging, dragged != target,
-              let from = layout.firstIndex(where: { $0.id == dragged }),
-              let to = layout.firstIndex(where: { $0.id == target }) else { return }
-        withAnimation(.easeInOut(duration: 0.15)) {
-            layout.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        dragging = nil
-        return true
     }
 }
 
