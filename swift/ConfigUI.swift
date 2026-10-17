@@ -607,6 +607,9 @@ struct PresetsListView: View {
                 .padding(5)
             }
             .frame(minWidth: 150, maxWidth: 200)
+            .onAppear {
+                if selectedPresetId == nil { selectedPresetId = config.presets.first?.id }
+            }
 
             if let index = config.presets.firstIndex(where: { $0.id == selectedPresetId }) {
                 PresetEditor(preset: $config.presets[index])
