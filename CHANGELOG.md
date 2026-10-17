@@ -18,6 +18,7 @@
 - **App picker**: choose apps from a searchable list of installed apps (with icons) instead of typing their exact name, in the layout and in the Keep Alive and Save Before Quitting lists.
 - **Drag and drop** to reorder apps in a preset, by the handle on the left of each row.
 - **Duplicate preset** button.
+- **Profiles** for trying things without touching your own presets: `scripts/profile.sh demo` opens the app on sample presets (for screenshots), `scripts/profile.sh off` goes back. See [docs/testing.md](docs/testing.md).
 - Warnings in the config editor when spaces clash (two fullscreen apps on one number, an app past the last space).
 - Simulation tests in `tests/` that run with plain Lua 5.4.
 

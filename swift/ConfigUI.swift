@@ -291,10 +291,7 @@ class ConfigManager: ObservableObject {
         loadConfig()
     }
 
-    var configPath: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".hammerspoon/spacepigeon_config.json")
-    }
+    var configPath: URL { Profile.configJSON }
 
     func loadConfig() {
         if FileManager.default.fileExists(atPath: configPath.path),
@@ -306,7 +303,7 @@ class ConfigManager: ObservableObject {
             }
             self.config = loaded
         } else {
-            self.config = ConfigManager.defaultConfig()
+            self.config = Profile.initialConfig()
         }
     }
 
@@ -317,6 +314,7 @@ class ConfigManager: ObservableObject {
             try? FileManager.default.createDirectory(at: hsDir, withIntermediateDirectories: true)
         }
 
+        try? FileManager.default.createDirectory(at: configPath.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         if let data = try? encoder.encode(config) {
@@ -324,16 +322,17 @@ class ConfigManager: ObservableObject {
         }
 
         let lua = generateLua(from: config)
-        // The Lua side loads `lua.config`, i.e. ~/.hammerspoon/lua/config.lua.
-        let luaDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hammerspoon/lua")
-        try? FileManager.default.createDirectory(at: luaDir, withIntermediateDirectories: true)
-        let luaPath = luaDir.appendingPathComponent("config.lua")
+        // The Lua side loads `lua.config`, i.e. ~/.hammerspoon/lua/config.lua,
+        // or the active profile's config.lua (see Profile).
+        let luaPath = Profile.configLua
+        try? FileManager.default.createDirectory(at: luaPath.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         do {
             try lua.write(to: luaPath, atomically: true, encoding: .utf8)
             // Bring the installed runtime Lua in line with this app build, so new
             // config options are understood after a rebuild. Never touches config.lua.
             let updated = BundleInstaller.installRuntimeFiles()
+            Profile.activate()
             saveStatus = updated.isEmpty
                 ? "Saved & Reloading..."
                 : "Saved, updated \(updated.count) runtime file(s) & Reloading..."

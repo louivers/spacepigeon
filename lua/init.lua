@@ -1,4 +1,15 @@
--- === Workspace automation for PhD vs Chill ===
+-- === SpacePigeon ===
+
+-- A profile (lua/profile.lua) brings its own config instead of lua/config.lua.
+local profileOk, profile = pcall(require, "lua.profile")
+if profileOk and profile.name then
+  local cfgOk, cfg = pcall(dofile, profile.dir .. "/config.lua")
+  if cfgOk and type(cfg) == "table" then
+    package.loaded["lua.config"] = cfg
+  else
+    print("SpacePigeon: could not load profile " .. profile.name .. ": " .. tostring(cfg))
+  end
+end
 
 -- Bind reload config URL event.
 -- Some URL dispatchers can lowercase the event name, so accept both.
@@ -52,7 +63,12 @@ local caps = helperOk and helper.capabilities() or {}
 local mru = hs.execute("defaults read com.apple.dock mru-spaces 2>/dev/null") or ""
 local mruOff = mru:match("^%s*0") ~= nil
 
+if profileOk and profile.name then
+  hs.alert.show("SpacePigeon: using the " .. profile.name .. " profile", 3)
+end
+
 log.info("SpacePigeon loaded", {
+  profile = profileOk and profile.name or nil,
   helperMove = caps.move == true,
   helperFocus = caps.focus == true,
   macos = caps.macos,

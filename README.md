@@ -145,8 +145,12 @@ lua tests/structure_sim.lua
 lua tests/mcdrag_sim.lua
 lua tests/workspace_sim.lua
 lua tests/dragbench_sim.lua
+lua tests/profile_sim.lua
 ```
 GitHub Actions runs them on every push and pull request.
+
+### Trying changes without touching your own presets
+`scripts/profile.sh demo` opens the app on a separate **profile** with sample presets, for screenshots and recordings. `scripts/profile.sh off` goes back to your own setup. See [docs/testing.md](docs/testing.md), which also covers testing a release as a new user would.
 
 ## Requirements
 - **[Hammerspoon](https://www.hammerspoon.org/)** (The app will automatically download and install this to `~/Applications` if it is not found).

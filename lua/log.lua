@@ -14,7 +14,8 @@
 
 local M = {}
 
-M.path = hs.configdir .. "/spacepigeon.log"
+local profileOk, profile = pcall(require, "lua.profile")
+M.path = ((profileOk and profile.dir) or hs.configdir) .. "/spacepigeon.log"
 
 local MAX_BYTES = 2 * 1024 * 1024
 local LEVELS = { debug = 1, info = 2, warn = 3, error = 4 }

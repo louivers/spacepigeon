@@ -67,7 +67,7 @@ EOF
 
 # 4. Compile Swift Launcher
 echo "🔨 Compiling Swift launcher..."
-swiftc "$PROJECT_ROOT/swift/launcher.swift" "$PROJECT_ROOT/swift/ConfigUI.swift" "$PROJECT_ROOT/swift/AppPicker.swift" "$PROJECT_ROOT/swift/LogUI.swift" -o "$MACOS/launcher"
+swiftc "$PROJECT_ROOT/swift/launcher.swift" "$PROJECT_ROOT/swift/ConfigUI.swift" "$PROJECT_ROOT/swift/AppPicker.swift" "$PROJECT_ROOT/swift/Profile.swift" "$PROJECT_ROOT/swift/LogUI.swift" -o "$MACOS/launcher"
 
 # 4b. Build the spacectl helper (moves windows between Spaces, SIP stays on)
 echo "🛠  Building spacectl helper..."

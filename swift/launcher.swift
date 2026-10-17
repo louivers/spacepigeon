@@ -39,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         titleLabel.alignment = .center
         contentView.addSubview(titleLabel)
 
-        let descLabel = NSTextField(labelWithString: "Install configuration to ~/.hammerspoon")
+        let descLabel = NSTextField(labelWithString: Profile.name.map { "Profile \"\($0)\": your own setup is not touched" } ?? "Install configuration to ~/.hammerspoon")
         descLabel.font = NSFont.systemFont(ofSize: 13)
         descLabel.frame = NSMakeRect(20, 210, 360, 20)
         descLabel.alignment = .center
@@ -262,6 +262,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
 
         let changed = BundleInstaller.installRuntimeFiles(from: resourcePath, to: targetDir)
         print("Installed: \(changed)")
+        Profile.activate()
 
         updateStatus("Reloading Hammerspoon...")
         let workspace = NSWorkspace.shared

@@ -56,8 +56,7 @@ final class LogStore: ObservableObject {
     private var lastSize: Int = -1
 
     init() {
-        url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".hammerspoon/spacepigeon.log")
+        url = Profile.log
         reload(force: true)
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self, self.live else { return }
