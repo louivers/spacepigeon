@@ -819,32 +819,43 @@ struct LayoutEditor<Header: View>: View {
     @Binding var layout: [AppLayout]
     var singleMonitor: Bool
     @ViewBuilder var header: Header
-    @State private var editingAppId: UUID? = nil
-    @State private var pickingAppId: UUID? = nil
-    // Kept in @State but not observed here: only RowDragEffect observes it,
-    // so moving the mouse redraws the dragged row's offset, not the editor.
+    @State private var pickingNewAppId: UUID? = nil
+    // Kept in @State but not observed here: the rows and the drag ghost
+    // observe them, so a mouse move redraws only the ghost.
     @State private var drag = RowDragState()
+    @State private var ghost = GhostPosition()
     @State private var rowHeight: CGFloat = 50
     private let rowSpacing: CGFloat = 10
+    /// Width of the handle column at the left of each row.
+    private let handleZone: CGFloat = 40
 
-    /// Drags a row by its handle: the whole row follows the mouse, and it
-    /// takes the next slot as soon as it is more than halfway over it.
-    func dragGesture(for id: UUID) -> some Gesture {
+    /// Drags a row by its handle. A copy of the row (the ghost) follows the
+    /// mouse, and the row takes the next slot once the ghost is more than
+    /// halfway over it. The gesture is on the whole list, so it keeps
+    /// tracking while the rows move.
+    var dragGesture: some Gesture {
         DragGesture(minimumDistance: 2, coordinateSpace: .named("appList"))
             .onChanged { value in
-                if drag.id != id {
-                    drag.id = id
-                    drag.shift = 0
-                }
-                guard var index = layout.firstIndex(where: { $0.id == id }) else { return }
                 let step = rowHeight + rowSpacing
-                var offset = value.translation.height - drag.shift
+                if drag.id == nil {
+                    guard value.startLocation.x < handleZone else { return }
+                    let index = Int(value.startLocation.y / step)
+                    guard layout.indices.contains(index) else { return }
+                    ghost.app = layout[index]
+                    ghost.image = snapshotRow(at: index)
+                    ghost.shift = 0
+                    ghost.offset = 0
+                    drag.id = layout[index].id
+                    NSCursor.closedHand.push()
+                }
+                guard let id = drag.id, var index = layout.firstIndex(where: { $0.id == id }) else { return }
+                var offset = value.translation.height - ghost.shift
                 while offset > step / 2 && index < layout.count - 1 {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         layout.swapAt(index, index + 1)
                     }
                     index += 1
-                    drag.shift += step
+                    ghost.shift += step
                     offset -= step
                 }
                 while offset < -step / 2 && index > 0 {
@@ -852,18 +863,46 @@ struct LayoutEditor<Header: View>: View {
                         layout.swapAt(index, index - 1)
                     }
                     index -= 1
-                    drag.shift -= step
+                    ghost.shift -= step
                     offset += step
                 }
-                drag.offset = offset
+                ghost.slotY = CGFloat(index) * step
+                ghost.offset = offset
             }
             .onEnded { _ in
+                guard drag.id != nil else { return }
+                NSCursor.pop()
+                // Let the ghost settle into the slot, then show the row again.
                 withAnimation(.easeOut(duration: 0.15)) {
-                    drag.offset = 0
-                    drag.id = nil
+                    ghost.offset = 0
                 }
-                drag.shift = 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    drag.id = nil
+                    ghost.app = nil
+                    ghost.image = nil
+                }
             }
+    }
+
+    /// A picture of the row at `index`, taken from the window, so the ghost
+    /// looks exactly like the row (its controls are AppKit views, which
+    /// SwiftUI's own renderer cannot draw).
+    func snapshotRow(at index: Int) -> NSImage? {
+        guard let window = NSApp.keyWindow, let view = window.contentView, ghost.listFrame != .zero else { return nil }
+        let step = rowHeight + rowSpacing
+        var rect = CGRect(x: ghost.listFrame.minX + 1, y: ghost.listFrame.minY + 1 + CGFloat(index) * step,
+                          width: ghost.listFrame.width - 2, height: rowHeight)
+        // SwiftUI's global space starts at the top of the window, title bar
+        // included; the content view starts below the title bar.
+        rect.origin.y -= window.frame.height - view.frame.height
+        if !view.isFlipped {
+            rect.origin.y = view.bounds.height - rect.maxY
+        }
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: rect) else { return nil }
+        view.cacheDisplay(in: rect, to: rep)
+        let image = NSImage(size: rect.size)
+        image.addRepresentation(rep)
+        return image
     }
 
     var monitorCount: Int { singleMonitor ? 1 : max(monitorSpaces.count, 2) }
@@ -959,7 +998,7 @@ struct LayoutEditor<Header: View>: View {
                 Button(action: {
                     let new = AppLayout(name: "", monitor: "main", spaceIndex: 1, pos: "max")
                     layout.append(new)
-                    pickingAppId = new.id
+                    pickingNewAppId = new.id
                 }) {
                     Label("Add App", systemImage: "plus")
                 }
@@ -975,62 +1014,260 @@ struct LayoutEditor<Header: View>: View {
                     }
 
                     ForEach($layout) { $app in
-                        appRow($app)
-                            .background(GeometryReader { geo in
-                                Color.clear.onAppear { rowHeight = geo.size.height }
-                            })
-                            .modifier(RowDragEffect(drag: drag, id: app.id))
+                        AppRowView(
+                            app: $app,
+                            singleMonitor: singleMonitor,
+                            monitorCount: monitorCount,
+                            maxSpaces: max(1, spaces(of: monitorNumber(app.monitor))),
+                            pickOnAppear: pickingNewAppId == app.id,
+                            onDelete: { id in layout.removeAll { $0.id == id } }
+                        )
+                        .equatable()
+                        .background(GeometryReader { geo in
+                            Color.clear.onAppear { rowHeight = geo.size.height }
+                        })
+                        .modifier(HiddenWhileDragged(drag: drag, id: app.id))
                     }
                 }
                 .padding(1)
+                .background(GeometryReader { geo in
+                    Color.clear
+                        .onAppear { ghost.listFrame = geo.frame(in: .global) }
+                        .onChange(of: geo.frame(in: .global)) { _, frame in ghost.listFrame = frame }
+                })
+                .overlay(alignment: .topLeading) {
+                    DragGhostLayer(drag: drag, ghost: ghost, singleMonitor: singleMonitor, rowHeight: rowHeight)
+                }
                 .coordinateSpace(name: "appList")
+                .simultaneousGesture(dragGesture)
             }
         }
         .onTapGesture {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
     }
+}
 
-    func appRow(_ app: Binding<AppLayout>) -> some View {
-        let a = app.wrappedValue
-        return HStack(spacing: 12) {
+/// Window positions, in menu groups: (tag, label, icon).
+let positionGroups: [[(tag: String, label: String, icon: String)]] = [
+    [("max", "Max", "rectangle.fill"),
+     ("fullscreen", "Fullscreen", "arrow.up.left.and.arrow.down.right")],
+    [("left", "Left", "rectangle.lefthalf.inset.filled"),
+     ("right", "Right", "rectangle.righthalf.inset.filled"),
+     ("top", "Top", "rectangle.tophalf.inset.filled"),
+     ("bottom", "Bottom", "rectangle.bottomhalf.inset.filled")],
+    [("left-third", "Left Third", "rectangle.leadingthird.inset.filled"),
+     ("center-third", "Center Third", "rectangle.split.3x1"),
+     ("right-third", "Right Third", "rectangle.trailingthird.inset.filled"),
+     ("left-two-thirds", "Left Two Thirds", "rectangle.leadinghalf.inset.filled"),
+     ("right-two-thirds", "Right Two Thirds", "rectangle.trailinghalf.inset.filled")],
+    [("top-left", "Top Left", "rectangle.inset.topleft.filled"),
+     ("top-right", "Top Right", "rectangle.inset.topright.filled"),
+     ("bottom-left", "Bottom Left", "rectangle.inset.bottomleft.filled"),
+     ("bottom-right", "Bottom Right", "rectangle.inset.bottomright.filled")],
+    [("center", "Center", "rectangle.center.inset.filled")],
+]
+
+func positionOption(_ tag: String) -> (label: String, icon: String) {
+    for group in positionGroups {
+        if let o = group.first(where: { $0.tag == tag }) { return (o.label, o.icon) }
+    }
+    return (tag, "rectangle")
+}
+
+/// The row being dragged. The list rows observe only this, so they redraw
+/// when a drag starts or ends, not on every mouse move.
+final class RowDragState: ObservableObject {
+    @Published var id: UUID?
+}
+
+/// Where the drag ghost is: the dragged row's slot plus how far the mouse
+/// moved from it. Only DragGhostLayer observes this.
+final class GhostPosition: ObservableObject {
+    @Published var offset: CGFloat = 0
+    @Published var slotY: CGFloat = 0
+    var app: AppLayout?
+    /// A picture of the dragged row; GhostRow is drawn when there is none.
+    var image: NSImage?
+    /// The list's frame in the window, kept up to date while scrolling.
+    var listFrame: CGRect = .zero
+    /// Translation already used up by moving the row to other slots.
+    var shift: CGFloat = 0
+}
+
+/// Keeps the dragged row's slot in the list, empty, while its ghost moves.
+struct HiddenWhileDragged: ViewModifier {
+    @ObservedObject var drag: RowDragState
+    let id: UUID
+
+    func body(content: Content) -> some View {
+        let dragging = drag.id == id
+        return content
+            .opacity(dragging ? 0 : 1)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.secondary.opacity(dragging ? 0.35 : 0), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            )
+    }
+}
+
+/// The copy of the dragged row that follows the mouse.
+struct DragGhostLayer: View {
+    @ObservedObject var drag: RowDragState
+    @ObservedObject var ghost: GhostPosition
+    let singleMonitor: Bool
+    let rowHeight: CGFloat
+
+    var body: some View {
+        if drag.id != nil, let app = ghost.app {
+            Group {
+                if let image = ghost.image {
+                    Image(nsImage: image)
+                } else {
+                    GhostRow(app: app, singleMonitor: singleMonitor, height: rowHeight)
+                }
+            }
+            .shadow(color: .black.opacity(0.4), radius: 6, y: 4)
+            .offset(x: 1, y: ghost.slotY + ghost.offset + 1)
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+/// A row drawn only with SwiftUI shapes and text, so it is cheap to move:
+/// the real row's text field, menus and steppers are AppKit views.
+struct GhostRow: View {
+    let app: AppLayout
+    let singleMonitor: Bool
+    var height: CGFloat? = nil // the real row's height, so nothing jumps
+
+    func pill<C: View>(width: CGFloat, @ViewBuilder _ content: () -> C) -> some View {
+        HStack(spacing: 4) {
+            content()
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .frame(width: width, height: 22)
+        .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.08)))
+    }
+
+    var body: some View {
+        let position = positionOption(app.pos)
+        HStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 16, height: 24)
+
+            HStack(spacing: 8) {
+                AppIconView(name: app.name)
+                Text(app.name.isEmpty ? "App Name" : app.name)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(app.name.isEmpty ? .secondary : .primary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.03)))
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.8))
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(app.isBrowser ? .accentColor : .secondary.opacity(0.7))
+            }
+            .frame(width: 200, alignment: .leading)
+
+            Divider().frame(height: 20)
+
+            if !singleMonitor {
+                pill(width: 75) { Text(monitorLabel(monitorNumber(app.monitor))) }
+            }
+
+            HStack(spacing: 2) {
+                Text("Sp").font(.caption).foregroundColor(.secondary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 18, height: 24)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.08)))
+                Text("\(app.spaceIndex)")
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 20, alignment: .center)
+            }
+
+            pill(width: 150) {
+                Image(systemName: position.icon)
+                Text(position.label)
+            }
+
+            Spacer()
+
+            Image(systemName: "trash")
+                .font(.system(size: 12))
+                .foregroundColor(.red.opacity(0.8))
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .padding(.vertical, height == nil ? 8 : 0)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(NSColor.controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor.opacity(0.5), lineWidth: 1))
+    }
+}
+
+/// One app in the layout. Equatable on its data, so moving other rows
+/// (or a drag) does not redraw it.
+struct AppRowView: View, Equatable {
+    @Binding var app: AppLayout
+    let singleMonitor: Bool
+    let monitorCount: Int
+    let maxSpaces: Int
+    let pickOnAppear: Bool
+    let onDelete: (UUID) -> Void
+    @State private var picking = false
+    @State private var editing = false
+
+    static func == (l: AppRowView, r: AppRowView) -> Bool {
+        l.app == r.app && l.singleMonitor == r.singleMonitor && l.monitorCount == r.monitorCount
+            && l.maxSpaces == r.maxSpaces && l.pickOnAppear == r.pickOnAppear
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
             DragHandle()
-                .gesture(dragGesture(for: a.id))
                 .help("Drag to reorder")
 
             HStack(spacing: 8) {
-                AppIconView(name: a.name)
-                MinimalistTextField(placeholder: "App Name", text: app.name)
+                AppIconView(name: app.name)
+                MinimalistTextField(placeholder: "App Name", text: $app.name)
                     .font(.system(size: 14, weight: .medium))
 
-                Button(action: { pickingAppId = a.id }) {
+                Button(action: { picking = true }) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary.opacity(0.8))
                 }
                 .buttonStyle(.plain)
                 .help("Choose from your apps")
-                .popover(isPresented: Binding(
-                    get: { pickingAppId == a.id },
-                    set: { if !$0 { pickingAppId = nil } }
-                )) {
+                .popover(isPresented: $picking) {
                     AppPickerView { name in
-                        app.wrappedValue.name = name
-                        pickingAppId = nil
+                        app.name = name
+                        picking = false
                     }
                 }
 
-                Button(action: { editingAppId = a.id }) {
+                Button(action: { editing = true }) {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(a.isBrowser ? .accentColor : .secondary.opacity(0.7))
+                        .foregroundColor(app.isBrowser ? .accentColor : .secondary.opacity(0.7))
                 }
                 .buttonStyle(.plain)
-                .popover(isPresented: Binding(
-                    get: { editingAppId == a.id },
-                    set: { if !$0 { editingAppId = nil } }
-                )) {
-                    AppSettingsView(app: app)
+                .popover(isPresented: $editing) {
+                    AppSettingsView(app: $app)
                 }
             }
             .frame(width: 200, alignment: .leading)
@@ -1039,7 +1276,7 @@ struct LayoutEditor<Header: View>: View {
                 .frame(height: 20)
 
             if !singleMonitor {
-                Picker("", selection: app.monitor) {
+                Picker("", selection: $app.monitor) {
                     ForEach(1...monitorCount, id: \.self) { n in
                         Text(monitorLabel(n)).tag(monitorKey(n))
                     }
@@ -1048,52 +1285,33 @@ struct LayoutEditor<Header: View>: View {
                 .labelsHidden()
             }
 
-            let maxSpaces = max(1, spaces(of: monitorNumber(a.monitor)))
             HStack(spacing: 2) {
                 Text("Sp")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                Stepper("", value: app.spaceIndex, in: 1...max(maxSpaces, a.spaceIndex))
+                Stepper("", value: $app.spaceIndex, in: 1...max(maxSpaces, app.spaceIndex))
                     .labelsHidden()
-                Text("\(a.spaceIndex)")
+                Text("\(app.spaceIndex)")
                     .font(.system(.body, design: .monospaced))
                     .frame(width: 20, alignment: .center)
             }
             // Position in Mission Control, desktops and fullscreen apps counted together.
-            .help(a.pos == "fullscreen" ? "Position of this fullscreen app in Mission Control, counting desktops and fullscreen apps from the left" : "Position of this app's desktop in Mission Control, counting desktops and fullscreen apps from the left")
+            .help(app.pos == "fullscreen" ? "Position of this fullscreen app in Mission Control, counting desktops and fullscreen apps from the left" : "Position of this app's desktop in Mission Control, counting desktops and fullscreen apps from the left")
 
-            Picker("", selection: app.pos) {
-                Label("Max", systemImage: "rectangle.fill").tag("max")
-                Label("Fullscreen", systemImage: "arrow.up.left.and.arrow.down.right").tag("fullscreen")
-                Divider()
-                Label("Left", systemImage: "rectangle.lefthalf.inset.filled").tag("left")
-                Label("Right", systemImage: "rectangle.righthalf.inset.filled").tag("right")
-                Label("Top", systemImage: "rectangle.tophalf.inset.filled").tag("top")
-                Label("Bottom", systemImage: "rectangle.bottomhalf.inset.filled").tag("bottom")
-                Divider()
-                Label("Left Third", systemImage: "rectangle.leadingthird.inset.filled").tag("left-third")
-                Label("Center Third", systemImage: "rectangle.split.3x1").tag("center-third")
-                Label("Right Third", systemImage: "rectangle.trailingthird.inset.filled").tag("right-third")
-                Label("Left Two Thirds", systemImage: "rectangle.leadinghalf.inset.filled").tag("left-two-thirds")
-                Label("Right Two Thirds", systemImage: "rectangle.trailinghalf.inset.filled").tag("right-two-thirds")
-                Divider()
-                Label("Top Left", systemImage: "rectangle.inset.topleft.filled").tag("top-left")
-                Label("Top Right", systemImage: "rectangle.inset.topright.filled").tag("top-right")
-                Label("Bottom Left", systemImage: "rectangle.inset.bottomleft.filled").tag("bottom-left")
-                Label("Bottom Right", systemImage: "rectangle.inset.bottomright.filled").tag("bottom-right")
-                Divider()
-                Label("Center", systemImage: "rectangle.center.inset.filled").tag("center")
+            Picker("", selection: $app.pos) {
+                ForEach(positionGroups.indices, id: \.self) { g in
+                    if g > 0 { Divider() }
+                    ForEach(positionGroups[g], id: \.tag) { o in
+                        Label(o.label, systemImage: o.icon).tag(o.tag)
+                    }
+                }
             }
             .frame(width: 150)
             .labelsHidden()
 
             Spacer()
 
-            Button(action: {
-                if let index = layout.firstIndex(where: { $0.id == a.id }) {
-                    layout.remove(at: index)
-                }
-            }) {
+            Button(action: { onDelete(app.id) }) {
                 Image(systemName: "trash")
                     .font(.system(size: 12))
                     .foregroundColor(.red.opacity(0.8))
@@ -1107,35 +1325,7 @@ struct LayoutEditor<Header: View>: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.black.opacity(0.1), lineWidth: 0.5)
         )
-    }
-}
-
-/// The row being dragged and how far it is from its slot in the list, so it
-/// stays under the mouse while the rows around it move.
-final class RowDragState: ObservableObject {
-    @Published var id: UUID?
-    @Published var offset: CGFloat = 0
-    /// Translation already used up by moving the row to other slots.
-    var shift: CGFloat = 0
-}
-
-/// Lifts the dragged row and moves it with the mouse. Only this modifier
-/// observes the drag, so the row's contents are not redrawn while it moves.
-struct RowDragEffect: ViewModifier {
-    @ObservedObject var drag: RowDragState
-    let id: UUID
-
-    func body(content: Content) -> some View {
-        let dragging = drag.id == id
-        return content
-            .scaleEffect(dragging ? 1.02 : 1)
-            .shadow(color: .black.opacity(dragging ? 0.35 : 0), radius: 8, y: 3)
-            .offset(y: dragging ? drag.offset : 0)
-            .zIndex(dragging ? 1 : 0)
-            // The row being dragged jumps to its new slot without animating,
-            // while its offset jumps back by the same amount, so it stays
-            // under the mouse.
-            .transaction { if dragging && drag.offset != 0 { $0.animation = nil } }
+        .onAppear { if pickOnAppear { picking = true } }
     }
 }
 
