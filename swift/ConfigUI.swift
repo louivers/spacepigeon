@@ -1035,7 +1035,7 @@ struct LayoutEditor<Header: View>: View {
                 .background(GeometryReader { geo in
                     Color.clear
                         .onAppear { ghost.listFrame = geo.frame(in: .global) }
-                        .onChange(of: geo.frame(in: .global)) { _, frame in ghost.listFrame = frame }
+                        .onChange(of: geo.frame(in: .global)) { frame in ghost.listFrame = frame }
                 })
                 .overlay(alignment: .topLeading) {
                     DragGhostLayer(drag: drag, ghost: ghost, singleMonitor: singleMonitor, rowHeight: rowHeight)

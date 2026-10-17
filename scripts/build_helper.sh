@@ -11,15 +11,16 @@ mkdir -p "$(dirname "$OUT")"
 
 # AppKit is linked on purpose: the window server ignores the bridged move
 # operation from processes that have not loaded it.
-# Built for this Mac's CPU only: SkyLight is a private framework that the
-# linker reads from the native system cache.
+# Universal (Intel and Apple Silicon). SkyLight is a private framework the
+# SDK has no stubs for, so its functions are not linked: they are looked up
+# when the helper starts, in the SkyLight that AppKit loads.
 clang -O2 -Wall -fno-objc-arc \
-  -arch "$(uname -m)" \
-  -mmacosx-version-min=13.0 \
+  -arch arm64 -arch x86_64 \
+  -mmacosx-version-min=12.0 \
   "$PROJECT_ROOT/helper/spacectl.m" \
   -o "$OUT" \
   -framework AppKit -framework ApplicationServices \
-  -F/System/Library/PrivateFrameworks -framework SkyLight
+  -Wl,-undefined,dynamic_lookup
 
 codesign --force --sign - "$OUT"
 echo "Built $OUT"

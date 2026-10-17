@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 APP_NAME="SpacePigeon"
+MIN_MACOS="12.0" # SwiftUI features used by the config editor
 APP_DIR="$PROJECT_ROOT/${APP_NAME}.app"
 CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -58,7 +59,7 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key>
     <string>2.0.0</string>
     <key>LSMinimumSystemVersion</key>
-    <string>10.10</string>
+    <string>$MIN_MACOS</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
 </dict>
@@ -67,7 +68,14 @@ EOF
 
 # 4. Compile Swift Launcher
 echo "🔨 Compiling Swift launcher..."
-swiftc "$PROJECT_ROOT/swift/launcher.swift" "$PROJECT_ROOT/swift/ConfigUI.swift" "$PROJECT_ROOT/swift/AppPicker.swift" "$PROJECT_ROOT/swift/Profile.swift" "$PROJECT_ROOT/swift/LogUI.swift" -o "$MACOS/launcher"
+# Universal: built for Intel and Apple Silicon, then merged into one binary.
+SOURCES=("$PROJECT_ROOT/swift/launcher.swift" "$PROJECT_ROOT/swift/ConfigUI.swift" "$PROJECT_ROOT/swift/AppPicker.swift" "$PROJECT_ROOT/swift/Profile.swift" "$PROJECT_ROOT/swift/LogUI.swift")
+SLICES="$(mktemp -d)"
+for ARCH in arm64 x86_64; do
+    swiftc -O -target "$ARCH-apple-macos$MIN_MACOS" "${SOURCES[@]}" -o "$SLICES/launcher-$ARCH"
+done
+lipo -create "$SLICES/launcher-arm64" "$SLICES/launcher-x86_64" -output "$MACOS/launcher"
+rm -rf "$SLICES"
 
 # 4b. Build the spacectl helper (moves windows between Spaces, SIP stays on)
 echo "🛠  Building spacectl helper..."

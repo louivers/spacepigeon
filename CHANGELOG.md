@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1
+- The app and the `spacectl` helper are universal, so SpacePigeon runs on Intel Macs too (it was Apple Silicon only).
+- The app needs macOS 12 or newer and says so, instead of failing to open on older versions.
+
 ## 2.0.0
 
 ### Added

@@ -153,6 +153,7 @@ GitHub Actions runs them on every push and pull request.
 `scripts/profile.sh demo` opens the app on a separate **profile** with sample presets, for screenshots and recordings. `scripts/profile.sh off` goes back to your own setup. See [docs/testing.md](docs/testing.md), which also covers testing a release as a new user would.
 
 ## Requirements
+- **macOS 12 (Monterey) or newer**, on an Intel or Apple Silicon Mac.
 - **[Hammerspoon](https://www.hammerspoon.org/)** (The app will automatically download and install this to `~/Applications` if it is not found).
 - **macOS 26.4 or newer** for the `spacectl` helper, which moves windows between spaces without quitting apps. On older versions SpacePigeon uses the fallback (Mission Control, and quitting and reopening an app as a last resort).
 - **Xcode Command Line Tools** to build from source (`xcode-select --install`).
