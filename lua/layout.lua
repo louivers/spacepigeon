@@ -190,7 +190,9 @@ local function findApp(name)
       if a:kind() == 1 then return a end
       other = other or a
     elseif not byFile and a.path and a:kind() == 1 then
-      local file = (a:path() or ""):match("([^/]+)%.app/?$")
+      -- path() throws for an app that is quitting (its bundle URL is gone).
+      local okPath, path = pcall(a.path, a)
+      local file = (okPath and path or ""):match("([^/]+)%.app/?$")
       if file and file:lower() == wanted then byFile = a end
     end
   end
@@ -731,14 +733,21 @@ function M.placeNormal(entry)
   end
 
   -- Position it. Accessibility needs the Space to be active to see the window.
-  spaceUtils.gotoSpaceAndWait(spaceId)
+  -- macOS can switch Spaces by itself just after an app was activated (seen
+  -- on macOS 27: to a fullscreen app's Space, right after a window was
+  -- focused to open a URL), so each try goes back if that happened.
   win = spaceUtils.waitFor(function()
+    spaceUtils.gotoSpaceAndWait(spaceId)
     return fullscreen.findWindow(application, wid)
   end, 2, 0.1)
   if win then
     applyWindowPosition(win, entry.pos, screen, entry.frame)
   else
-    log.warn("Could not reach " .. label .. " to set its size")
+    -- The app's windows Accessibility does see here, for the log.
+    local seen = {}
+    for _, w in ipairs(application:allWindows()) do table.insert(seen, w:id() or "?") end
+    log.warn("Could not reach " .. label .. " to set its size",
+      { window = wid, space = spaceId, focusedSpace = spaces.focusedSpace(), accessibility = seen })
   end
 
   openUrl(entry, launchedNow, win)

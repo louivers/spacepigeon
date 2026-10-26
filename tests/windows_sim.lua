@@ -9,6 +9,15 @@ local spacesList = { { id = 1, type = "user" }, { id = 2, type = "user" }, { id 
 local current = 1
 local windows, zorder, apps, byPid = {}, {}, {}, {}
 local alerts, keys, menus, settings, urls = {}, {}, {}, {}, {}
+local opened = {} -- `open -a` commands, with the window in front at the time
+-- macOS 27 can switch to another Space by itself just after an app was
+-- activated, here right after SpacePigeon checked it is on the right one.
+-- `switchAfterCheck` arms it, the next space check makes it due, and the
+-- next Accessibility call sees the other Space.
+local switchAfterCheck, switchDue
+local function macosSwitches()
+  if switchDue then current, switchDue = switchDue, nil end
+end
 local hotkeys = {}
 local nextWin, nextPid = 500, 100
 
@@ -70,8 +79,8 @@ local function newApp(name, opts)
   function a:isHidden() return false end
   function a:unhide() end
   -- Like real Accessibility: only windows on the active Space are visible.
-  function a:mainWindow() return windowsOf(self, current)[1] end
-  function a:allWindows() return windowsOf(self, current) end
+  function a:mainWindow() macosSwitches(); return windowsOf(self, current)[1] end
+  function a:allWindows() macosSwitches(); return windowsOf(self, current) end
   -- macOS switches to the Space of the app's frontmost window.
   function a:activate()
     local front = windowsOf(self)[1]
@@ -127,7 +136,13 @@ os.execute("rm -rf " .. dir .. " && mkdir -p " .. dir)
 hs = {
   configdir = dir,
   fs = { attributes = function() return nil end },
-  execute = function(cmd) return (cmd:find("mru%-spaces") and "0\n" or ""), true end,
+  execute = function(cmd)
+    if cmd:find("^open %-a") then
+      table.insert(opened, { cmd = cmd, front = zorder[1] })
+      if cmd:find("dict://pigeon", 1, true) then switchAfterCheck = 3 end
+    end
+    return (cmd:find("mru%-spaces") and "0\n" or ""), true
+  end,
   json = { encode = encode, decode = function() return nil end },
   alert = { show = function(m) table.insert(alerts, m) end },
   inspect = function(t) return tostring(t) end,
@@ -170,7 +185,12 @@ hs = {
   },
   osascript = { applescript = function() return true end },
   window = {
-    get = function(id) return windows[id] end,
+    -- Like real Accessibility: only windows on the active Space.
+    get = function(id)
+      macosSwitches()
+      local w = windows[id]
+      return (w and w.space == current) and w or nil
+    end,
     allWindows = function()
       local out = {}
       for _, id in ipairs(zorder) do if windows[id].space == current then table.insert(out, windows[id]) end end
@@ -207,7 +227,10 @@ hs = {
       for id, w in pairs(windows) do if w.space == sid then table.insert(out, id) end end
       return out
     end,
-    activeSpaceOnScreen = function() return current end,
+    activeSpaceOnScreen = function()
+      if switchAfterCheck then switchDue, switchAfterCheck = switchAfterCheck, nil end
+      return current
+    end,
     focusedSpace = function() return current end,
     gotoSpace = function(sid) current = sid end,
     moveWindowToSpace = function(wid, sid) windows[wid].space = sid end,
@@ -280,6 +303,10 @@ package.preload["lua.config"] = function()
           newWindow = { "Profiles", "Work" } },
         -- Not running yet; an exact frame.
         { name = "Notes", monitor = "main", space = 2, pos = "custom", frame = { 0.25, 0.1, 0.5, 0.8 } },
+        -- Two open windows, each with a deep link. Opening the first one's
+        -- link makes macOS switch to the fullscreen Space by itself.
+        { name = "Dictionary", monitor = "main", space = 2, pos = "left", url = "dict://pigeon" },
+        { name = "Dictionary", monitor = "main", space = 2, pos = "right", url = "dict://workspace" },
         -- Twice, but Cmd+N does nothing in it: one window is placed, the
         -- other is reported and the run goes on.
         { name = "Mute", monitor = "main", space = 1, pos = "max" },
@@ -304,6 +331,9 @@ local mute = newApp("Mute", { cmdN = false })
 newWindow(mute, 2, "Mute")
 local movie = newApp("Movie")
 local movieWin = newWindow(movie, 3, "Movie", { x = 0, y = 0, w = 1000, h = 800 })
+local dictionary = newApp("Dictionary")
+local dict1 = newWindow(dictionary, 1, "English")
+local dict2 = newWindow(dictionary, 1, "English")
 local pigeon = newApp("SpacePigeon", { bundle = "com.louivers.spacepigeon" })
 newWindow(pigeon, 2, "SpacePigeon Configuration")
 -- An app that runs as "Code" but is named by its file name in presets.
@@ -336,6 +366,20 @@ check("Chrome Work window on the right of desktop 2", work and work.space == 2 a
 local notesWin = apps.Notes and windowsOf(apps.Notes)[1]
 check("Notes launched and placed at its custom frame", notesWin and notesWin.space == 2 and notesWin.f.x == 250
   and notesWin.f.y == 80 and notesWin.f.w == 500 and notesWin.f.h == 640)
+
+local function openedWith(url)
+  for _, o in ipairs(opened) do
+    if o.cmd:find(url, 1, true) then return o.front end
+  end
+end
+-- Entries take the frontmost free window first, so #1 gets dict2.
+local dictLeft = dict1.f.x == 0 and dict1 or dict2
+local dictRight = dictLeft == dict1 and dict2 or dict1
+check("macOS switching Spaces mid-run: both Dictionary windows still placed, left and right of desktop 2",
+  dictLeft.space == 2 and dictLeft.f.x == 0 and dictLeft.f.w == 500
+  and dictRight.space == 2 and dictRight.f.x == 500 and dictRight.f.w == 500)
+check("each deep link opens with its own window in front", openedWith("dict://pigeon") == dictLeft._id
+  and openedWith("dict://workspace") == dictRight._id)
 
 check("Mute keeps one window, placed", #windowsOf(mute) == 1 and windowsOf(mute)[1].space == 1)
 check("a missing window is reported and the run goes on", alerts[#alerts] == "Work workspace ready, 1 app(s) not placed")
