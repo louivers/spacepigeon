@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0
 
 ### Added
 - **Several windows of one app** ([#11](https://github.com/louivers/spacepigeon/issues/11), [#13](https://github.com/louivers/spacepigeon/issues/13)): each row in a preset is one window, so an app can be in a preset more than once (two Terminal windows side by side, two Chrome profiles). Rows get the app's windows in list order and keep them when the preset is set up again. Missing windows are opened with Cmd+N, or with a menu item or AppleScript set per row. A row can ask for a specific window by text from its title. A window that does not show up is skipped with a warning.
