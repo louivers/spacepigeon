@@ -48,6 +48,12 @@ end
 local PICKUP = 20
 local downPos, pickedUp = nil, nil
 local noPickup = 0 -- how many drags Mission Control does not pick up, nudge or not
+-- macOS 27: the first press on a Space's thumbnail picks nothing up, and
+-- letting go over a thumbnail that was not picked up is a click, which
+-- opens that Space and closes Mission Control.
+local firstPressIgnored = false
+local pressedBefore, pressIgnored = {}, false
+local clickCloses, clicks = false, 0
 
 local function gapOpen()
   return pickedUp and gapRight ~= nil and clock - gapSince >= OPEN_DELAY
@@ -163,9 +169,18 @@ hs = {
               return
             end
             if not grown then return end
+            if kind == "up" and pressedIndex and pickedUp == false then
+              -- Nothing was picked up, so nothing moves.
+              if clickCloses and thumbAt(p) == pressedIndex then
+                clicks = clicks + 1
+                mcOpen = false
+              end
+              pressedIndex, gapRight = nil, nil
+              return
+            end
             if kind == "drag" and pressedIndex then
               if pickedUp == nil then
-                pickedUp = math.abs(p.x - downPos.x) <= PICKUP and noPickup == 0
+                pickedUp = math.abs(p.x - downPos.x) <= PICKUP and noPickup == 0 and not pressIgnored
                 if noPickup > 0 then noPickup = noPickup - 1 end
               end
               hoverGap(p)
@@ -190,6 +205,9 @@ hs = {
             if kind == "down" then
               gapRight, downPos, pickedUp = nil, { x = p.x, y = p.y }, nil
               pressedIndex = thumbAt(p)
+              local sid = pressedIndex and order[pressedIndex]
+              pressIgnored = firstPressIgnored and sid ~= nil and not pressedBefore[sid]
+              if sid then pressedBefore[sid] = true end
             elseif outside then
               -- Let go below the bar: the thumbnail goes back, nothing moves.
               pressedIndex = nil
@@ -304,6 +322,7 @@ local lastInfo = nil
 local function case(title, start, wantedTokens, expect, ignore, shouldFail, merge, off, rights, shift, nopick)
   ignoreDrops = ignore or 0
   noPickup = nopick or 0
+  pressedBefore, clicks = {}, 0
   shiftAfterDrop, shiftUntil = shift or false, -1
   offNext = off or 0
   mergeNext = merge or false
@@ -360,6 +379,21 @@ centeredFrames = true
 require("lua.mission_control").inWindowManager = true
 case("macOS 27: PhD - Coding of 13:32", "e D c b t u o m k", "b c u o m k e t D1", "b c u o m k e t D", 0, false, false, 0, 1)
 case("macOS 27: new desktop landed at the end", "D a b D", "D1 a D2 b", "D a D b")
+-- The first drag of a new Space is not picked up there, and letting go over
+-- its thumbnail would be a click: it lets go on the empty bar instead and
+-- tries again, without a click.
+firstPressIgnored, clickCloses = true, true
+for _, c in ipairs({
+  { "macOS 27: first drag not picked up: no click", "D D a", "D1 a D2", "D a D" },
+  { "macOS 27: first drags not picked up, two apps", "D D a b", "D1 b D2 a", "D b D a" },
+}) do
+  case(c[1], c[2], c[3], c[4])
+  if clicks > 0 then
+    failures = failures + 1
+    print("FAIL  let go over a thumbnail that was not picked up (a click)")
+  end
+end
+firstPressIgnored, clickCloses = false, false
 require("lua.mission_control").inWindowManager = false
 centeredFrames = false
 case("macOS 27 layout, found from the Dock side too", "D D a", "D1 a D2", "D a D")

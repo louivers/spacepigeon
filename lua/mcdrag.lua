@@ -47,6 +47,9 @@ local GROWN_HEIGHT = 40
 local QUICK = { name = "quick", hold = 0.05, step = math.huge }
 local SLOW = { name = "careful", hold = 0.15, step = 40 }
 local STEP_WAIT = 0.008
+-- A drag that is not picked up can end as a click, which closes Mission
+-- Control. It is opened again this many times.
+local MAX_REOPENS = 3
 
 -- The Spaces bar (an AX element) for one screen, or nil and a reason. In
 -- the Dock up to macOS 26, in WindowManager from macOS 27.
@@ -230,7 +233,7 @@ function M.reorder(screen, wanted, names, opts)
 
   local thumbs, err = M.openBar(screen, #order)
   if not thumbs then failure = err end
-  local reopened = false
+  local reopens = 0
 
   local listed = {}
   for _, sid in ipairs(wanted) do listed[sid] = true end
@@ -282,15 +285,18 @@ function M.reorder(screen, wanted, names, opts)
 
       waitUntilStill(screen, 0.5)
       thumbs = thumbnails(screen)
-      if not thumbs and not reopened then
-        -- A drag that was not picked up ends as a click on the thumbnail,
-        -- which closes Mission Control. Open it again, once.
-        reopened = true
+      if not thumbs and reopens < MAX_REOPENS then
+        -- A drag that was not picked up can end as a click on the
+        -- thumbnail, which closes Mission Control. Open it again.
+        reopens = reopens + 1
         log.debug("Mission Control closed during a drag; opening it again")
         thumbs, err = M.openBar(screen, #order)
         if not thumbs then failure = err break end
       end
-      if not thumbs or #thumbs ~= #order then
+      if not thumbs then
+        failure = "Mission Control kept closing during the drags"
+        break
+      elseif #thumbs ~= #order then
         failure = "The Spaces bar does not match the Spaces list"
         break
       end
@@ -392,12 +398,22 @@ function M.reorder(screen, wanted, names, opts)
         -- picked up and let go at an unopened gap made a Split View.
         if still or missionControl.inWindowManager then
           if still then aimInfo.pickedUp = false end
+          local back = from
+          -- macOS 27 often does not pick up the first drag of a new
+          -- fullscreen Space, and takes letting go over its thumbnail for
+          -- a click, which opens that Space and closes Mission Control.
+          -- Nothing was picked up, so let go on the empty bar left of the
+          -- thumbnails instead (when there is room).
+          local edge = screen:frame().x
+          if still and missionControl.inWindowManager and thumbs[1].frame.x - edge >= 40 then
+            back = { x = (edge + thumbs[1].frame.x) / 2, y = from.y }
+          end
           for i = 1, 4 do
-            post("leftMouseDragged", { x = at.x + (from.x - at.x) * i / 4, y = from.y })
+            post("leftMouseDragged", { x = at.x + (back.x - at.x) * i / 4, y = back.y })
             hs.timer.usleep(10000)
           end
-          aimInfo.dropX = math.floor(from.x)
-          return from
+          aimInfo.dropX = math.floor(back.x)
+          return back
         end
         aimInfo.dropX = math.floor(at.x)
         return at
@@ -447,6 +463,8 @@ function M.reorder(screen, wanted, names, opts)
         if not isPlaced(t) then tries = 0 end
       elseif now == dragSrc then
         log.debug("Drag of " .. nameOf(dragSid) .. " was ignored at " .. timing.name .. " speed", aimInfo)
+      elseif not now then
+        log.debug("Mission Control closed after the drag of " .. nameOf(dragSid), aimInfo)
       else
         aimInfo.landedAt = now
         log.debug("Drag of " .. nameOf(dragSid) .. " landed at position " .. tostring(now) ..
