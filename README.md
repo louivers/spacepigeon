@@ -8,6 +8,11 @@
 
 Effortlessly transition between workflows. SpacePigeon instantly orchestrates your applications, windows, and displays into the perfect environment for any task with a single click or hotkey.
 
+## What's new in 2.2
+
+- **macOS 27**: switching spaces, adding and removing desktops, and dragging fullscreen apps into place work again. macOS 27 moved Mission Control to another process and changed how it reports the Spaces bar, which broke all of these.
+- On macOS 27 SpacePigeon switches spaces through Mission Control, because macOS 27 ignores the swipe trick it used to switch them instantly. A switch takes about a fifth of a second.
+
 ## What's new in 2.1
 
 - **Several windows of one app**: add an app to a preset more than once, for example two Terminal windows side by side or one Chrome window per profile. Each row gets its own window and keeps it when you set the preset up again. See [Several windows of one app](#several-windows-of-one-app).
