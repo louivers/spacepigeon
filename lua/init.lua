@@ -20,6 +20,16 @@ end
 hs.urlevent.bind("reloadConfig", reloadConfigEvent)
 hs.urlevent.bind("reloadconfig", reloadConfigEvent)
 
+-- The config editor's "New preset from the current layout" asks for this
+-- and reads ~/.hammerspoon/spacepigeon_capture.json (lua/capture.lua).
+local function captureLayoutEvent()
+  local captureOk, err = pcall(function() require("lua.capture").toFile() end)
+  if not captureOk then print("SpacePigeon: could not read the layout: " .. tostring(err)) end
+end
+
+hs.urlevent.bind("captureLayout", captureLayoutEvent)
+hs.urlevent.bind("capturelayout", captureLayoutEvent)
+
 -- Drag test (lua/dragbench.lua): open "hammerspoon://dragbench".
 hs.urlevent.bind("dragbench", function(_, params)
   require("lua.dragbench").run(params)

@@ -67,6 +67,17 @@ struct AppLayout: Codable, Identifiable, Hashable {
     var pos: String // "max", "fullscreen", or a part of the screen (see regions in lua/layout.lua)
     var url: String = "" // Optional URL/Deep link
     var isBrowser: Bool = false // New flag to indicate if advanced URL settings should be shown
+    var frame: [Double] = [] // pos "custom": x, y, width, height as parts of the screen (0 to 1)
+    var window: String = "" // text in the title of the window this row wants; empty = any window
+    var newWindowKind: String = "" // how to open a window for this row: "" = Cmd+N, "menu" or "applescript"
+    var newWindow: String = "" // the menu item ("File > New Window") or the AppleScript
+
+    static let defaultFrame: [Double] = [0.1, 0.1, 0.8, 0.8]
+
+    /// Whether the gear popover has something set.
+    var hasAdvancedSettings: Bool {
+        isBrowser || pos == "custom" || !window.isEmpty || !newWindowKind.isEmpty
+    }
 
     // Backwards compatibility for 'space' field (absolute index)
     // We'll map it during init if needed, but prefer the new structure.
@@ -81,7 +92,7 @@ struct AppLayout: Codable, Identifiable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, monitor, spaceIndex, pos, url, isBrowser
+        case name, monitor, spaceIndex, pos, url, isBrowser, frame, window, newWindowKind, newWindow
     }
 
     init(from decoder: Decoder) throws {
@@ -90,6 +101,10 @@ struct AppLayout: Codable, Identifiable, Hashable {
         pos = try container.decode(String.self, forKey: .pos)
         url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
         isBrowser = try container.decodeIfPresent(Bool.self, forKey: .isBrowser) ?? false
+        frame = try container.decodeIfPresent([Double].self, forKey: .frame) ?? []
+        window = try container.decodeIfPresent(String.self, forKey: .window) ?? ""
+        newWindowKind = try container.decodeIfPresent(String.self, forKey: .newWindowKind) ?? ""
+        newWindow = try container.decodeIfPresent(String.self, forKey: .newWindow) ?? ""
 
         // Try to decode new fields, fallback to legacy logic if missing
         if let m = try? container.decode(String.self, forKey: .monitor),
@@ -280,11 +295,73 @@ struct AppConfig: Codable {
     }
 }
 
+// MARK: - Current layout
+
+/// The windows that were open, read by Hammerspoon (lua/capture.lua) and
+/// written to ~/.hammerspoon/spacepigeon_capture.json. Space numbers are
+/// positions in Mission Control, like a preset's.
+struct CapturedLayout: Decodable {
+    struct Monitor: Decodable { var spaces: Int }
+    struct App: Decodable {
+        var name: String
+        var monitor: Int
+        var space: Int
+        var pos: String
+        var frame: [Double]?
+    }
+
+    var monitors: [Monitor]
+    var apps: [App]
+    var warnings: [String]
+
+    enum CodingKeys: String, CodingKey { case monitors, apps, warnings }
+
+    // Hammerspoon writes an empty list as {}, so empty lists may not decode.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        monitors = (try? container.decode([Monitor].self, forKey: .monitors)) ?? []
+        apps = (try? container.decode([App].self, forKey: .apps)) ?? []
+        warnings = (try? container.decode([String].self, forKey: .warnings)) ?? []
+    }
+
+    static var file: URL { Profile.hammerspoonDir.appendingPathComponent("spacepigeon_capture.json") }
+
+    /// Reads and removes the file, if there is one.
+    static func take() -> CapturedLayout? {
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        try? FileManager.default.removeItem(at: file)
+        return try? JSONDecoder().decode(CapturedLayout.self, from: data)
+    }
+
+    func preset() -> Preset {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        let key = "preset_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let layout = apps.map { a -> AppLayout in
+            var pos = a.pos
+            if pos == "custom" && a.frame?.count != 4 { pos = "max" }
+            var app = AppLayout(name: a.name, monitor: monitorKey(min(max(a.monitor, 1), maxMonitors)),
+                                spaceIndex: max(a.space, 1), pos: pos)
+            if pos == "custom", let frame = a.frame { app.frame = frame }
+            return app
+        }
+        var preset = Preset(key: key, name: "Layout of " + formatter.string(from: Date()), spaces: 1, secondarySpaces: 0, layout: layout)
+        var spaces = monitors.prefix(maxMonitors).map { max($0.spaces, 0) }
+        while spaces.count < 2 { spaces.append(0) }
+        spaces[0] = max(spaces[0], 1)
+        preset.monitorSpaces = spaces
+        return preset
+    }
+}
+
 // MARK: - Config Manager
 
 class ConfigManager: ObservableObject {
     @Published var config: AppConfig
     @Published var saveStatus: String = ""
+    @Published var selectedPresetId: UUID?
+    @Published var capturing = false
 
     init() {
         self.config = AppConfig(presets: [], bindings: [])
@@ -343,6 +420,57 @@ class ConfigManager: ObservableObject {
         } catch {
             saveStatus = "Error: \(error.localizedDescription)"
         }
+    }
+
+    /// Adds a preset made from the windows that were open, and selects it.
+    /// It is saved with the rest of the config.
+    func add(_ captured: CapturedLayout) {
+        let preset = captured.preset()
+        config.presets.append(preset)
+        selectedPresetId = preset.id
+        if captured.apps.isEmpty {
+            saveStatus = "No windows found for the new preset"
+        } else {
+            let warning = captured.warnings.first.map { " (\($0))" } ?? ""
+            saveStatus = "New preset with \(captured.apps.count) window(s): check it, then Save & Reload\(warning)"
+        }
+    }
+
+    /// Asks Hammerspoon for the windows that are open right now and adds them
+    /// as a new preset.
+    func captureCurrentLayout() {
+        guard !capturing else { return }
+        capturing = true
+        saveStatus = "Reading your windows…"
+        try? FileManager.default.removeItem(at: CapturedLayout.file)
+
+        // Hammerspoon must run Lua from this app build to answer.
+        let updated = BundleInstaller.installRuntimeFiles()
+        if !updated.isEmpty { reloadHammerspoon() }
+        let delay: TimeInterval = updated.isEmpty ? 0 : 2
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            let open = NSWorkspace.OpenConfiguration()
+            open.activates = false
+            if let url = URL(string: "hammerspoon://captureLayout") {
+                NSWorkspace.shared.open(url, configuration: open)
+            }
+            self.waitForCapture(until: Date().addingTimeInterval(8))
+        }
+    }
+
+    private func waitForCapture(until deadline: Date) {
+        if let captured = CapturedLayout.take() {
+            capturing = false
+            add(captured)
+            return
+        }
+        guard Date() < deadline else {
+            capturing = false
+            saveStatus = "Hammerspoon did not answer. Is it running? Try Save & Reload first."
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.waitForCapture(until: deadline) }
     }
 
     static func defaultConfig() -> AppConfig {
@@ -498,10 +626,39 @@ class ConfigManager: ObservableObject {
     func layoutLua(_ layout: [AppLayout], indent: String) -> String {
         var lua = ""
         for item in layout where !item.name.trimmingCharacters(in: .whitespaces).isEmpty {
-            let urlPart = item.url.isEmpty ? "" : ", url = \(luaString(item.url))"
-            lua += "\(indent){ name = \(luaString(item.name)), monitor = \(luaString(item.monitor)), space = \(item.spaceIndex), pos = \(luaString(item.pos))\(urlPart) },\n"
+            var parts = [
+                "name = \(luaString(item.name))", "monitor = \(luaString(item.monitor))",
+                "space = \(item.spaceIndex)", "pos = \(luaString(item.pos))",
+            ]
+            if !item.url.isEmpty { parts.append("url = \(luaString(item.url))") }
+            if item.pos == "custom" {
+                let frame = item.frame.count == 4 ? item.frame : AppLayout.defaultFrame
+                parts.append("frame = { " + frame.map { String(format: "%.4f", $0) }.joined(separator: ", ") + " }")
+            }
+            let window = item.window.trimmingCharacters(in: .whitespaces)
+            if !window.isEmpty { parts.append("window = \(luaString(window))") }
+            if let newWindow = newWindowLua(item) { parts.append("newWindow = \(newWindow)") }
+            lua += "\(indent){ " + parts.joined(separator: ", ") + " },\n"
         }
         return lua
+    }
+
+    /// `{ "Profiles", "Work" }` for a menu item, a string for AppleScript,
+    /// nil for Cmd+N (the default).
+    func newWindowLua(_ item: AppLayout) -> String? {
+        let text = item.newWindow.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        switch item.newWindowKind {
+        case "menu":
+            let path = text.components(separatedBy: ">")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return path.isEmpty ? nil : "{ " + path.map { luaString($0) }.joined(separator: ", ") + " }"
+        case "applescript":
+            return luaString(text)
+        default:
+            return nil
+        }
     }
 
     func reloadHammerspoon() {
@@ -527,12 +684,13 @@ class ConfigManager: ObservableObject {
 // MARK: - Views
 
 struct ConfigView: View {
-    @StateObject var manager = ConfigManager()
+    @ObservedObject var manager: ConfigManager
 
     var body: some View {
         VStack {
             TabView {
-                PresetsListView(config: $manager.config)
+                PresetsListView(config: $manager.config, selectedPresetId: $manager.selectedPresetId,
+                                capturing: manager.capturing, capture: manager.captureCurrentLayout)
                     .tabItem { Label("Presets", systemImage: "list.bullet") }
 
                 BindingsListView(config: $manager.config)
@@ -559,7 +717,9 @@ struct ConfigView: View {
 
 struct PresetsListView: View {
     @Binding var config: AppConfig
-    @State private var selectedPresetId: UUID?
+    @Binding var selectedPresetId: UUID?
+    var capturing: Bool
+    var capture: () -> Void
 
     func duplicateSelected() {
         guard let id = selectedPresetId, let index = config.presets.firstIndex(where: { $0.id == id }) else { return }
@@ -602,6 +762,11 @@ struct PresetsListView: View {
                     }
                     .help("Duplicate this preset")
                     .disabled(selectedPresetId == nil)
+                    Button(action: capture) {
+                        Image(systemName: "camera.viewfinder")
+                    }
+                    .help("New preset from the windows that are open now")
+                    .disabled(capturing)
                     Spacer()
                 }
                 .padding(5)
@@ -627,33 +792,101 @@ struct AppSettingsView: View {
     @Binding var app: AppLayout
     @Environment(\.presentationMode) var presentationMode
 
+    /// One side of the custom frame, in percent of the screen.
+    func percent(_ i: Int) -> Binding<Int> {
+        Binding(
+            get: { app.frame.count == 4 ? Int((app.frame[i] * 100).rounded()) : Int(AppLayout.defaultFrame[i] * 100) },
+            set: { value in
+                var frame = app.frame.count == 4 ? app.frame : AppLayout.defaultFrame
+                frame[i] = Double(min(max(value, 0), 100)) / 100
+                app.frame = frame
+            }
+        )
+    }
+
+    func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline)
+                .bold()
+            content()
+        }
+    }
+
+    func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Advanced Settings for \(app.name)")
                 .font(.headline)
 
             Divider()
 
-            Toggle("Is this a Browser?", isOn: $app.isBrowser)
-                .toggleStyle(.checkbox)
+            section("Startup URL") {
+                Toggle("Is this a Browser?", isOn: $app.isBrowser)
+                    .toggleStyle(.checkbox)
 
-            if app.isBrowser {
-                VStack(alignment: .leading) {
-                    Text("Startup URL")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                if app.isBrowser {
                     TextField("https://example.com", text: $app.url)
                         .textFieldStyle(.roundedBorder)
+                } else {
+                    caption("Only enable this if you want this app to open a specific URL/Deep Link instead of just launching.")
                 }
-                .padding(.leading, 20)
-            } else {
-                Text("Only enable this if you want this app to open a specific URL/Deep Link instead of just launching.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.leading, 20)
             }
 
-            Spacer()
+            if app.pos == "custom" {
+                section("Custom Position") {
+                    HStack(spacing: 10) {
+                        ForEach(Array(["Left", "Top", "Width", "Height"].enumerated()), id: \.offset) { i, label in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(label)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                HStack(spacing: 2) {
+                                    TextField("", value: percent(i), formatter: NumberFormatter())
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 50)
+                                    Text("%")
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    caption("In percent of the screen, from its top left corner. The menu bar and the Dock are not part of it.")
+                }
+            }
+
+            section("Window") {
+                TextField("Text in the window title (optional)", text: $app.window)
+                    .textFieldStyle(.roundedBorder)
+                caption("Each row of an app gets its own window, so an app can be in the list more than once. To pick a specific window, enter text from its title, like a project or a named Chrome window (Window > Name Window…).")
+
+                Picker("Open a new window with", selection: $app.newWindowKind) {
+                    Text("Cmd+N").tag("")
+                    Text("A menu item").tag("menu")
+                    Text("AppleScript").tag("applescript")
+                }
+                .fixedSize()
+
+                if app.newWindowKind == "menu" {
+                    TextField("File > New Window", text: $app.newWindow)
+                        .textFieldStyle(.roundedBorder)
+                    caption("The menu, then the item, as in the app's menu bar. For a Chrome profile: Profiles > Work.")
+                } else if app.newWindowKind == "applescript" {
+                    TextEditor(text: $app.newWindow)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(height: 60)
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.3)))
+                    caption("For example: tell application \"iTerm\" to create window with default profile")
+                } else {
+                    caption("Used when the app has fewer windows open than it has rows.")
+                }
+            }
 
             HStack {
                 Spacer()
@@ -661,12 +894,16 @@ struct AppSettingsView: View {
                     if !app.isBrowser {
                         app.url = ""
                     }
+                    app.window = app.window.trimmingCharacters(in: .whitespaces)
+                    if app.newWindowKind.isEmpty {
+                        app.newWindow = ""
+                    }
                     presentationMode.wrappedValue.dismiss()
                 }
             }
         }
         .padding()
-        .frame(width: 400, height: 250)
+        .frame(width: 440)
         .onTapGesture {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
@@ -830,6 +1067,19 @@ struct LayoutEditor<Header: View>: View {
     private let rowSpacing: CGFloat = 10
     /// Width of the handle column at the left of each row.
     private let handleZone: CGFloat = 40
+
+    /// A row's app, found by id. The rows are equatable and keep the binding
+    /// they were made with, so a binding by index would edit (or crash on)
+    /// another app once rows are deleted or moved.
+    func binding(for app: AppLayout) -> Binding<AppLayout> {
+        let id = app.id
+        return Binding(
+            get: { layout.first { $0.id == id } ?? app },
+            set: { new in
+                if let i = layout.firstIndex(where: { $0.id == id }) { layout[i] = new }
+            }
+        )
+    }
 
     /// Drags a row by its handle. A copy of the row (the ghost) follows the
     /// mouse, and the row takes the next slot once the ghost is more than
@@ -1015,9 +1265,9 @@ struct LayoutEditor<Header: View>: View {
                             .padding(.top, 20)
                     }
 
-                    ForEach($layout) { $app in
+                    ForEach(layout) { app in
                         AppRowView(
-                            app: $app,
+                            app: binding(for: app),
                             singleMonitor: singleMonitor,
                             monitorCount: monitorCount,
                             maxSpaces: max(1, spaces(of: monitorNumber(app.monitor))),
@@ -1067,7 +1317,8 @@ let positionGroups: [[(tag: String, label: String, icon: String)]] = [
      ("top-right", "Top Right", "rectangle.inset.topright.filled"),
      ("bottom-left", "Bottom Left", "rectangle.inset.bottomleft.filled"),
      ("bottom-right", "Bottom Right", "rectangle.inset.bottomright.filled")],
-    [("center", "Center", "rectangle.center.inset.filled")],
+    [("center", "Center", "rectangle.center.inset.filled"),
+     ("custom", "Custom", "rectangle.dashed")],
 ]
 
 func positionOption(_ tag: String) -> (label: String, icon: String) {
@@ -1179,7 +1430,7 @@ struct GhostRow: View {
                     .foregroundColor(.secondary.opacity(0.8))
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 12))
-                    .foregroundColor(app.isBrowser ? .accentColor : .secondary.opacity(0.7))
+                    .foregroundColor(app.hasAdvancedSettings ? .accentColor : .secondary.opacity(0.7))
             }
             .frame(width: 200, alignment: .leading)
 
@@ -1265,9 +1516,10 @@ struct AppRowView: View, Equatable {
                 Button(action: { editing = true }) {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(app.isBrowser ? .accentColor : .secondary.opacity(0.7))
+                        .foregroundColor(app.hasAdvancedSettings ? .accentColor : .secondary.opacity(0.7))
                 }
                 .buttonStyle(.plain)
+                .help(app.window.isEmpty ? "Advanced settings" : "Advanced settings. Window: title has \"\(app.window)\"")
                 .popover(isPresented: $editing) {
                     AppSettingsView(app: $app)
                 }
@@ -1300,7 +1552,16 @@ struct AppRowView: View, Equatable {
             // Position in Mission Control, desktops and fullscreen apps counted together.
             .help(app.pos == "fullscreen" ? "Position of this fullscreen app in Mission Control, counting desktops and fullscreen apps from the left" : "Position of this app's desktop in Mission Control, counting desktops and fullscreen apps from the left")
 
-            Picker("", selection: $app.pos) {
+            Picker("", selection: Binding(
+                get: { app.pos },
+                set: { pos in
+                    app.pos = pos
+                    if pos == "custom" {
+                        if app.frame.count != 4 { app.frame = AppLayout.defaultFrame }
+                        editing = true // the frame is set in the gear popover
+                    }
+                }
+            )) {
                 ForEach(positionGroups.indices, id: \.self) { g in
                     if g > 0 { Divider() }
                     ForEach(positionGroups[g], id: \.tag) { o in
@@ -1670,6 +1931,7 @@ struct LayoutPreviewView: View {
 class ConfigWindowManager {
     static let shared = ConfigWindowManager()
     var windowController: NSWindowController?
+    lazy var manager = ConfigManager()
 
     func show() {
         if let wc = windowController {
@@ -1679,7 +1941,7 @@ class ConfigWindowManager {
             return
         }
 
-        let configView = ConfigView()
+        let configView = ConfigView(manager: manager)
         let hostingController = NSHostingController(rootView: configView)
 
         let window = NSWindow(
@@ -1701,4 +1963,15 @@ class ConfigWindowManager {
 
 func openConfigWindow() {
     ConfigWindowManager.shared.show()
+}
+
+/// Opens the config editor on a new preset made from the layout Hammerspoon
+/// saved ("Save Current Layout as Preset…" in its menu bar). Returns false
+/// when there is none waiting.
+@discardableResult
+func openCapturedLayout() -> Bool {
+    guard let captured = CapturedLayout.take() else { return false }
+    ConfigWindowManager.shared.show()
+    ConfigWindowManager.shared.manager.add(captured)
+    return true
 }

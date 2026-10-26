@@ -40,10 +40,12 @@ local function newWindow(appRec, sid)
   return w
 end
 
+local nextPid = 100
 local function newApp(name, running)
-  local a = { _name = name, _wins = {}, _running = running }
+  nextPid = nextPid + 1
+  local a = { _name = name, _wins = {}, _running = running, _pid = nextPid }
   function a:name() return self._name end
-  function a:pid() return 42 end
+  function a:pid() return self._pid end
   function a:kind() return 1 end
   function a:isRunning() return self._running end
   function a:isHidden() return false end

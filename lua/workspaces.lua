@@ -25,15 +25,23 @@ local systemKeep = {
 local function quitOtherApps(layoutConfig, keepExtra)
   local done = log.step("Quit other apps")
 
-  local keep = {}
-  for _, name in ipairs(keepExtra or {}) do keep[name] = true end
-  for _, entry in ipairs(layoutConfig) do keep[entry.name] = true end
+  -- By name, and by the running app each name finds: a preset can name an
+  -- app by its file name ("Visual Studio Code" runs as "Code").
+  local keep, keepPid = {}, {}
+  local function keepApp(name)
+    if not name then return end
+    keep[name] = true
+    local a = layout.findApp(name)
+    if a then keepPid[a:pid()] = true end
+  end
+  for _, name in ipairs(keepExtra or {}) do keepApp(name) end
+  for _, entry in ipairs(layoutConfig) do keepApp(entry.name) end
 
   local pids = helper.pidsWithWindows()
   local targets, names = {}, {}
   for _, a in ipairs(app.runningApplications()) do
     local name = a:name()
-    if name and a:kind() == 1 and not systemKeep[name] and not keep[name] then
+    if name and a:kind() == 1 and not systemKeep[name] and not keep[name] and not keepPid[a:pid()] then
       local hasWindow
       if pids then
         hasWindow = pids[a:pid()] == true
@@ -289,15 +297,23 @@ local function runSetup(modeName, targetSpaces, layoutConfig, opts)
     return c
   end
 
-  local normalEntries = {}
+  local normalEntries, copies = {}, {}
   for _, entry in ipairs(entries) do
     local m = monitors[spaceUtils.monitorIndex(entry.monitor)] or monitors[1]
+    local c
     if entry.pos == "fullscreen" then
-      table.insert(m.fullscreen, copyWith(entry, m.resolved.afterOf[entry]))
+      c = copyWith(entry, m.resolved.afterOf[entry])
+      table.insert(m.fullscreen, c)
     else
-      table.insert(normalEntries, copyWith(entry, m.resolved.desktopOf[entry] or entry.space))
+      c = copyWith(entry, m.resolved.desktopOf[entry] or entry.space)
+      table.insert(normalEntries, c)
     end
+    table.insert(copies, c)
   end
+
+  -- An app that is in the preset more than once gets a window per entry,
+  -- in preset order.
+  layout.assignWindows(copies)
 
   -- Desktops and fullscreen apps, per monitor.
   for _, m in ipairs(monitors) do
@@ -450,6 +466,9 @@ local function startMenubar()
       })
     end
     table.insert(items, { title = "-" })
+    table.insert(items, { title = "Save Current Layout as Preset…", disabled = running, fn = function()
+      require("lua.capture").toApp()
+    end })
     table.insert(items, { title = "Edit Config…", fn = function()
       hs.task.new("/usr/bin/open", nil, { "-a", "SpacePigeon" }):start()
     end })

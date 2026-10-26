@@ -106,6 +106,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         if CommandLine.arguments.contains("--logs") {
             openLogWindow()
         }
+        // Hammerspoon's "Save Current Layout as Preset…" opens the app with --capture.
+        if CommandLine.arguments.contains("--capture") {
+            openCapturedLayout()
+        }
+    }
+
+    // `open -a SpacePigeon` while the app is running lands here, without
+    // the arguments: a saved layout waiting is the only thing to pick up.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        return !openCapturedLayout()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

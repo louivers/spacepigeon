@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Several windows of one app** ([#11](https://github.com/louivers/spacepigeon/issues/11), [#13](https://github.com/louivers/spacepigeon/issues/13)): each row in a preset is one window, so an app can be in a preset more than once (two Terminal windows side by side, two Chrome profiles). Rows get the app's windows in list order and keep them when the preset is set up again. Missing windows are opened with Cmd+N, or with a menu item or AppleScript set per row. A row can ask for a specific window by text from its title. A window that does not show up is skipped with a warning.
+- **Save the current layout as a preset** ([#12](https://github.com/louivers/spacepigeon/issues/12)): the 📷 button in the config editor, or **Save Current Layout as Preset…** in the menu bar, reads the open windows (app, monitor, space, position) into a new preset. Positions close to a half, third, quarter or the whole screen snap to it.
+- **Custom position**: any part of the screen, in percent.
+
+### Changed
+- `spacectl windows` also reports each window's position (helper 1.2.0).
+- Apps a preset names by their file name (like "Visual Studio Code", which runs as "Code") are no longer quit as "not in the preset".
+
 ## 2.0.1
 - The app and the `spacectl` helper are universal, so SpacePigeon runs on Intel Macs too (it was Apple Silicon only).
 - The app needs macOS 12 or newer and says so, instead of failing to open on older versions.

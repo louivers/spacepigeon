@@ -133,7 +133,7 @@ local function decodeList(output)
 end
 
 -- Windows of an app on any Space, front to back, as a list of
--- { id = <window id>, spaces = {...}, fullscreen = bool }.
+-- { id = <window id>, spaces = {...}, fullscreen = bool, x, y, w, h }.
 -- Accessibility often cannot see windows on inactive Spaces; this can.
 function M.windowsForApp(application)
   if not application or not M.canMove() then return {} end
@@ -142,14 +142,23 @@ function M.windowsForApp(application)
   return decodeList(output)
 end
 
--- Set of process ids that own at least one normal window on any Space, or
+-- Every normal window on any Space, front to back, as a list of
+-- { id, pid, spaces, fullscreen, x, y, w, h } (x and y from helper 1.2), or
 -- nil when the helper is unavailable. One call, no Accessibility needed.
-function M.pidsWithWindows()
+function M.allWindows()
   if not M.canMove() then return nil end
   local ok, output = run("windows")
   if not ok then return nil end
+  return decodeList(output)
+end
+
+-- Set of process ids that own at least one normal window on any Space, or
+-- nil when the helper is unavailable.
+function M.pidsWithWindows()
+  local list = M.allWindows()
+  if not list then return nil end
   local pids = {}
-  for _, w in ipairs(decodeList(output)) do
+  for _, w in ipairs(list) do
     if w.pid then pids[w.pid] = true end
   end
   return pids

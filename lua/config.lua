@@ -16,6 +16,15 @@ local presets = {
       { name = "Terminal", space = 2, pos = "left" },
       { name = "Notes",    space = 2, pos = "right" },
       { name = "Music",    space = 3, pos = "max" },
+      -- An exact position: pos = "custom" with frame = { x, y, w, h } as
+      -- parts of the screen, e.g. { 0.25, 0.1, 0.5, 0.8 }.
+      -- Each entry is one window. An app that is in the list more than once
+      -- gets a window per entry; SpacePigeon opens more with Cmd+N.
+      --   window = "Personal": pick the window whose title has this text.
+      --   newWindow: how to open a window for this entry instead of Cmd+N:
+      --     a menu item, { "New Window" } (any menu) or { "Shell", "New Window" },
+      --     AppleScript, 'tell application "iTerm" to create window with default profile',
+      --     or a Lua function, function(app) ... end.
     },
     -- Optional: the app to focus when the setup is done. Without it, the
     -- first app on the main monitor's first space gets focus.

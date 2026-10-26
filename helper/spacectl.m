@@ -33,7 +33,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define SPACECTL_VERSION "1.1.0"
+#define SPACECTL_VERSION "1.2.0"
 
 #define SPACE_TYPE_USER       0
 #define SPACE_TYPE_FULLSCREEN 4
@@ -359,8 +359,9 @@ static int cmd_windows(pid_t pid)
         for (int s = 0; s < n; ++s) {
             printf("%s%llu", s ? "," : "", (unsigned long long) spaces[s]);
         }
-        printf("],\"fullscreen\":%s,\"w\":%d,\"h\":%d}",
+        printf("],\"fullscreen\":%s,\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d}",
                SLSSpaceGetType(g_cid, spaces[0]) == SPACE_TYPE_FULLSCREEN ? "true" : "false",
+               (int) bounds.origin.x, (int) bounds.origin.y,
                (int) bounds.size.width, (int) bounds.size.height);
     }
     printf("]\n");
