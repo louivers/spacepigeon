@@ -24,7 +24,17 @@ scripts/profile.sh off                # back to your own setup
 
 The app opens on the profile, but Hammerspoon keeps running your own setup until you press **Save & Reload** in the config editor. Hammerspoon then shows "SpacePigeon: using the demo profile", and its hotkeys and menu bar are the profile's. Saving from the normal app (without a profile) also switches back to your own setup.
 
-The **demo** profile has three presets (Deep Work, Meetings, Evening) with apps that come with macOS, bound to Ctrl+Alt+Cmd+1, 2 and 3. It does not quit other apps, so running a preset while recording never closes your work. Turn **Quit apps that are not in the preset** on in its General tab if you want the clean-desktop effect.
+The **demo** profile has three presets with apps that come with macOS, open in about a second and show nothing personal, bound to Ctrl+Alt+Cmd+1, 2 and 3:
+
+| Preset | What it shows |
+| --- | --- |
+| **Showcase** (1) | Most features in one run. Desktop 1: two Dictionary windows side by side, each opened on a word with a `dict://` deep link (several windows of one app, the second opened with Cmd+N). Then Chess, Stocks and Font Book fullscreen, before desktop 2: each new fullscreen app lands at the end and is dragged into place in Mission Control. Desktop 2: Clock on the left two-thirds, Calculator at a custom position. Tips is centered on the second monitor, or with one monitor fullscreen after Font Book (a mode with its own layout), which makes four drags. Ends with Dictionary focused. |
+| **Meetings** (2) | Clock, Stocks and Calculator in thirds, Dictionary maximized on desktop 2. |
+| **Evening** (3) | Chess fullscreen before the desktops, Tips on the left two-thirds, Calculator at a custom position. |
+
+Run Showcase first, then Meetings or Evening: the windows that are already open are moved, not reopened. The profile does not quit other apps, so running a preset while recording never closes your work. Turn **Quit apps that are not in the preset** on in its General tab if you want the clean-desktop effect.
+
+The presets are written when the profile is created. If you made the demo profile before they changed, or changed them yourself, `scripts/profile.sh demo --reset` starts it over.
 
 You can also start the app on a profile with `open -n SpacePigeon.app --args --profile <name>`, or with `SPACEPIGEON_PROFILE=<name>` in the environment.
 
