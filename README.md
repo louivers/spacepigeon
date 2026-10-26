@@ -8,6 +8,12 @@
 
 Effortlessly transition between workflows. SpacePigeon instantly orchestrates your applications, windows, and displays into the perfect environment for any task with a single click or hotkey.
 
+## What's new in 2.1
+
+- **Several windows of one app**: add an app to a preset more than once, for example two Terminal windows side by side or one Chrome window per profile. Each row gets its own window and keeps it when you set the preset up again. See [Several windows of one app](#several-windows-of-one-app).
+- **Save the current layout**: turn the windows you have open right now into a new preset, with the 📷 button in the config editor or **Save Current Layout as Preset…** in the menu bar.
+- **Custom position**: put a window on any part of the screen, set in percent.
+
 ## What's new in 2.0
 
 - **No more quitting**: apps that are already open are moved to their space instead of being closed and reopened, using the new `spacectl` helper (macOS 26.4+, SIP stays on).
@@ -36,7 +42,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list. Configs from 1.x keep workin
 - 📸 **Save the current layout**: Turn the windows you have open right now into a new preset.
 - ♻️ **No more quitting**: Apps that are already open are moved to their space instead of being closed and reopened.
 - ⌨️ **Hotkeys**: Bind global hotkeys to trigger specific presets instantly.
-- 🐦 **Menu Bar**: Pick a preset from the menu bar.
+- 🐦 **Menu Bar**: Pick a preset from the menu bar, or save the current layout as a new one.
 - 🔌 **Follows your monitors**: Optionally rearranges your windows when you plug in or unplug a monitor.
 - 💾 **Save before quitting**: Presses Cmd+S in the apps you choose before quitting them.
 - 📑 **Presets**: Create multiple workspace states (e.g., "Work", "Chill", "Stream") and switch between them.
@@ -88,7 +94,7 @@ Manage your workspace layouts here.
 - **Spaces**: How many spaces you want on each monitor (**Add Monitor** adds a third and more, up to 10; monitors are numbered from the main one, then left to right), counting desktops and fullscreen apps together (what you see in the Mission Control bar). Every space without a fullscreen app is a desktop. If something clashes (two fullscreen apps on one number, an app past the last space), a warning shows under the counts.
 - **Modes**: Give a preset a different layout for a given number of connected monitors with **Add Mode**. When you trigger the preset, SpacePigeon uses the mode for the number of monitors connected right now, or the **Default** layout if there is none. A new mode starts as a copy of the default; the spaces of monitors past the mode's count go after the main monitor's. SpacePigeon does the same when a monitor in the layout is not connected.
 - **Focus When Done**: The app that has focus when the setup is complete. SpacePigeon switches to the space with that app's window. **First app** (the default) focuses the first app on the main monitor's first space.
-- **Applications Layout**: Add apps to the list. Drag a row by its handle (☰) to reorder. Each row is one window: add an app twice to place two of its windows (see [Several windows of one app](#several-windows-of-one-app)).
+- **Applications Layout**: Add apps to the list. Drag a row by its handle (☰) to reorder. Each row is one window, so add an app twice to place two of its windows (see [Several windows of one app](#several-windows-of-one-app)).
   - **Name**: The application name (e.g., "Safari", "Terminal"). Click the magnifying glass to pick from your installed apps.
   - **Monitor**: Choose "Main", "2nd", "3rd" and so on.
   - **Space**: Where the app goes in Mission Control, counting desktops and fullscreen apps together from the left. Example with 5 spaces: Brave fullscreen at 1 and Cursor at 3 gives *Brave, Desktop, Desktop with Cursor, Desktop, Desktop*.
@@ -98,7 +104,7 @@ Manage your workspace layouts here.
     - **URL**: Enter a web URL (for browsers) or a deep link (for other apps) to open on launch.
     - **Custom Position**: Left, top, width and height in percent of the screen (only for the Custom position).
     - **Window**: Text from the title of the window this row should get, and how to open a new window. See below.
-- **New preset from the current layout** (📷 button under the preset list): reads the windows that are open right now and adds them as a new preset: each window's app, monitor, space and position. Positions close to a half, third, quarter or the whole screen snap to it; anything else becomes a Custom position. Check the new preset, give it a name, then save. The SpacePigeon and Hammerspoon windows are left out. You can do the same with **Save Current Layout as Preset…** in the menu bar.
+- **New preset from the current layout** (📷 button under the preset list): reads the windows that are open right now and adds them as a new preset, with each window's app, monitor, space and position. Positions close to a half, third, quarter or the whole screen snap to it, and anything else becomes a Custom position. Check the new preset, give it a name, then save. The SpacePigeon and Hammerspoon windows are left out. You can do the same with **Save Current Layout as Preset…** in the menu bar.
 
 ### Several windows of one app
 Each row in a preset is one window. Add an app more than once to place several of its windows, for example two Terminal windows on the left and right half of a desktop.
