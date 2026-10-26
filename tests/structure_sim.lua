@@ -3,6 +3,7 @@
 --   * a new desktop goes after the last desktop (before trailing fullscreen
 --     Spaces)
 --   * a new fullscreen Space goes at the very end
+-- macOS 27 puts a new desktop at the very end too (newDesktopAtEnd).
 -- Mission Control drags are faked here; tests/mcdrag_sim.lua covers them.
 -- Run from the project root: lua tests/structure_sim.lua
 package.path = "./?.lua;" .. package.path
@@ -14,6 +15,7 @@ local nextSpaceId = 1000
 local counts = { add = 0, remove = 0, fsIn = 0, fsOut = 0 }
 local settingsStore = {}
 local stubborn = {}   -- window ids that ignore the first fullscreen request
+local newDesktopAtEnd = false -- macOS 27
 
 local function spaceById(id)
   for i, s in ipairs(spacesList) do
@@ -141,7 +143,7 @@ hs = {
     end,
     addSpaceToScreen = function()
       counts.add = counts.add + 1
-      newSpace("user", desktopSlot())
+      newSpace("user", (not newDesktopAtEnd) and desktopSlot() or nil)
     end,
     removeSpace = function(sid)
       if sid == current then return false, "showing" end
@@ -277,6 +279,12 @@ case("off: app between desktops goes to the end", "D a D D", "", 3, "a@1", "D D 
 case("off: same space number keeps list order", "D D", "a b", 2, "b@1 a@1", "D D b a", off)
 case("off: missing desktops are added before the apps", "D a", "", 3, "a@2", "D D D a", off)
 case("off: unlisted fullscreen app is ignored", "D X D", "a", 2, "a@1", "D X D a", off)
+
+-- macOS 27: a new desktop goes after the fullscreen apps.
+newDesktopAtEnd = true
+case("27: missing desktops are added, then the drag", "D a", "", 3, "a@2", "D D a D")
+case("27 off: missing desktops are added before the apps", "D a", "", 3, "a@2", "D D D a", off)
+newDesktopAtEnd = false
 
 print(failures == 0 and "\nall structure cases pass" or ("\n" .. failures .. " case(s) failed"))
 os.exit(failures == 0 and 0 or 1)

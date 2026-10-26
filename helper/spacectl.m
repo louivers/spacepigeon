@@ -9,7 +9,9 @@
 //   move:   SkyLight's bridged "move windows to managed space" operation
 //           (works with SIP on since macOS 26.4).
 //   focus:  synthesized high-velocity Dock swipe gestures (no Mission Control,
-//           no animation), the technique yabai uses with SIP on.
+//           no animation), the technique yabai uses with SIP on. macOS 27
+//           ignores synthesized Dock swipes, so there it is not offered and
+//           SpacePigeon switches Spaces through Mission Control.
 //
 // These are private macOS interfaces. A macOS update can break them; every
 // command verifies its result and exits non-zero when it did not work, so the
@@ -33,7 +35,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define SPACECTL_VERSION "1.2.0"
+#define SPACECTL_VERSION "1.3.0"
 
 #define SPACE_TYPE_USER       0
 #define SPACE_TYPE_FULLSCREEN 4
@@ -164,6 +166,14 @@ static bridged_operation_fn find_bridged_perform(void)
 // Spaces.
 //
 
+// Synthesized Dock swipes switch Spaces up to macOS 26. On macOS 27 they do
+// nothing (tried with and without the companion gesture event, extra fields,
+// changed phases, and at the HID tap), while posting other events works.
+static bool focus_supported(void)
+{
+    return [[NSProcessInfo processInfo] operatingSystemVersion].majorVersion < 27;
+}
+
 static uint64_t cfnumber_u64(CFTypeRef value)
 {
     uint64_t result = 0;
@@ -288,9 +298,9 @@ static int cmd_check(void)
 {
     NSOperatingSystemVersion v = [[NSProcessInfo processInfo] operatingSystemVersion];
     bool move = find_bridged_perform() != NULL;
-    printf("{\"version\":\"%s\",\"macos\":\"%ld.%ld.%ld\",\"move\":%s,\"focus\":true}\n",
+    printf("{\"version\":\"%s\",\"macos\":\"%ld.%ld.%ld\",\"move\":%s,\"focus\":%s}\n",
            SPACECTL_VERSION, (long) v.majorVersion, (long) v.minorVersion, (long) v.patchVersion,
-           move ? "true" : "false");
+           move ? "true" : "false", focus_supported() ? "true" : "false");
     return move ? 0 : 3;
 }
 
@@ -453,6 +463,8 @@ static void post_space_swipes(int steps)
 
 static int cmd_focus(uint64_t sid, int timeout_ms)
 {
+    if (!focus_supported()) fail(3, "Dock swipes do not switch Spaces on this macOS; use Mission Control");
+
     CFStringRef display = SLSCopyManagedDisplayForSpace(g_cid, sid);
     if (!display) fail(1, "space %llu not found", (unsigned long long) sid);
 

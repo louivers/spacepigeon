@@ -7,6 +7,8 @@
 --   * a new desktop goes after the last desktop, so before any fullscreen
 --     Spaces at the end
 --   * a new fullscreen Space always goes at the very end
+-- macOS 27 puts a new desktop at the very end too, after the fullscreen
+-- Spaces; the drags below put it back in its place.
 --
 -- So: get the right number of desktops, make every fullscreen app
 -- fullscreen (they land at the end), then drag the fullscreen Spaces to

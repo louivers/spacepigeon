@@ -1,5 +1,6 @@
 local spaces = require("hs.spaces")
 local helper = require("lua.helper")
+local missionControl = require("lua.mission_control")
 local log = require("lua.log")
 
 -- How long hs.spaces waits for Mission Control to open before it removes a
@@ -120,6 +121,80 @@ function M.getScreenForSpace(spaceId)
   return nil
 end
 
+-- Mission Control actions. Up to macOS 26 these are hs.spaces.gotoSpace,
+-- removeSpace and addSpaceToScreen. On macOS 27 those cannot find Mission
+-- Control (see lua/mission_control.lua), so its buttons are pressed here.
+-- Same results: true, or nil and a reason.
+
+-- Opens Mission Control and waits until the Spaces bar of the screen with
+-- `spaceId` shows every Space. Returns the button for `spaceId`, or nil and
+-- a reason.
+local function spaceButton(spaceId)
+  local screen = M.getScreenForSpace(spaceId)
+  if not screen then return nil, "space not found in managed displays" end
+  local all = spaces.spacesForScreen(screen) or {}
+  local index
+  for i, sid in ipairs(all) do
+    if sid == spaceId then index = i end
+  end
+
+  spaces.openMissionControl()
+  local err
+  local buttons = M.waitFor(function()
+    local list
+    list, err = missionControl.spacesList(screen)
+    local found = list and list.AXChildren
+    if found and #found == #all then return found end
+    if found then err = "the Spaces bar does not match the Spaces list" end
+    return nil
+  end, 2, 0.03)
+  if not buttons then return nil, err end
+  return buttons[index]
+end
+
+local function press(element, action)
+  local ok, result = pcall(function() return element:performAction(action) end)
+  if ok and result then return true end
+  return nil, ok and ("Mission Control ignored " .. action) or tostring(result)
+end
+
+local function gotoSpace(spaceId)
+  if not missionControl.inWindowManager then return spaces.gotoSpace(spaceId) end
+  local button, err = spaceButton(spaceId)
+  local ok
+  if button then ok, err = press(button, "AXPress") end
+  if not ok then spaces.closeMissionControl() end
+  return ok, err
+end
+
+-- Leaves Mission Control open, like hs.spaces.removeSpace(spaceId, false).
+local function removeSpace(spaceId)
+  if not missionControl.inWindowManager then return spaces.removeSpace(spaceId, false) end
+  local screen = M.getScreenForSpace(spaceId)
+  if screen and spaces.activeSpaceOnScreen(screen) == spaceId then
+    return nil, "cannot remove a currently active user space"
+  end
+  local button, err = spaceButton(spaceId)
+  if not button then return nil, err end
+  return press(button, "AXRemoveDesktop")
+end
+
+-- Closes Mission Control afterwards, like hs.spaces.addSpaceToScreen(screen, true).
+local function addSpaceToScreen(screen)
+  if not missionControl.inWindowManager then return spaces.addSpaceToScreen(screen, true) end
+  spaces.openMissionControl()
+  local err
+  local button = M.waitFor(function()
+    local b
+    b, err = missionControl.addButton(screen)
+    return b
+  end, 2, 0.03)
+  local ok
+  if button then ok, err = press(button, "AXPress") end
+  spaces.closeMissionControl()
+  return ok, err
+end
+
 local function ensureSpacesForScreen(screen, n)
   if not screen then return false end
 
@@ -131,7 +206,7 @@ local function ensureSpacesForScreen(screen, n)
   local tries = 0
   local s = mySpaces()
   while #s < n and tries < maxTries do
-    spaces.addSpaceToScreen(screen)
+    addSpaceToScreen(screen)
     M.sleep(0.6)
     s = mySpaces()
     tries = tries + 1
@@ -148,7 +223,7 @@ local function ensureSpacesForScreen(screen, n)
   s = mySpaces()
   local removed = false
   while #s > n and tries < maxTries do
-    spaces.removeSpace(s[#s], false)
+    removeSpace(s[#s])
     removed = true
     M.sleep(0.4)
     s = mySpaces()
@@ -196,7 +271,8 @@ function M.gotoSpaceAndWait(spaceId)
   if arrived() then return true end
 
   local started = log.clock()
-  if helper.canFocus() then
+  local instant = helper.canFocus()
+  if instant then
     -- The swipe is sometimes ignored, for example while an app is still
     -- animating into fullscreen. One quick retry is much cheaper than
     -- falling back to Mission Control.
@@ -211,18 +287,34 @@ function M.gotoSpaceAndWait(spaceId)
     end
     log.warn("Instant switch to space " .. spaceId .. " failed twice; using Mission Control")
   else
-    log.debug("Switching to space " .. spaceId .. " via Mission Control (no helper)")
+    log.debug("Switching to space " .. spaceId .. " via Mission Control")
   end
-  spaces.gotoSpace(spaceId)
   if not screen then
-    M.sleep(0.5)
+    log.error("Could not switch to space " .. spaceId, { error = "not on any screen" })
     return false
   end
-  local ok = M.waitFor(arrived, 5, 0.1) and true or false
+
+  -- hs.spaces can throw (see removeDesktops), so: protected call. Pressing
+  -- the Space can fail while Mission Control is still opening, for example
+  -- right after an app animated into fullscreen: one retry.
+  local function viaMissionControl()
+    local called, pressed, err = pcall(gotoSpace, spaceId)
+    if not called then return nil, pressed end
+    return pressed, err
+  end
+  local pressed, err = viaMissionControl()
+  if not pressed then
+    log.debug("Mission Control did not switch to space " .. spaceId .. "; trying again", { error = tostring(err) })
+    M.sleep(0.5)
+    pressed, err = viaMissionControl()
+  end
+  local ok = M.waitFor(arrived, pressed and 5 or 1, 0.1) and true or false
   if ok then
-    log.info("Switched to space " .. spaceId .. " via Mission Control", { ms = math.floor(log.since(started)) })
+    -- Without the instant switch (macOS 27) this is the normal way.
+    local level = instant and log.info or log.debug
+    level("Switched to space " .. spaceId .. " via Mission Control", { ms = math.floor(log.since(started)) })
   else
-    log.error("Could not switch to space " .. spaceId)
+    log.error("Could not switch to space " .. spaceId, err and { error = tostring(err) } or nil)
   end
   return ok
 end
@@ -244,7 +336,7 @@ function M.addDesktop(screen)
   -- Control did not open in time (seen right after an app animated into
   -- fullscreen). So: protected call, and one retry after a short pause.
   local function try()
-    local called, ok, err = pcall(spaces.addSpaceToScreen, screen, true)
+    local called, ok, err = pcall(addSpaceToScreen, screen)
     if not called then return false, ok end
     return ok, err
   end
@@ -291,7 +383,7 @@ function M.removeDesktops(spaceIds)
     -- hs.spaces.removeSpace can throw (not just return false) when Mission
     -- Control is not fully drawn yet, so it is always called through pcall.
     local function try()
-      local called, ok, err = pcall(spaces.removeSpace, sid, false)
+      local called, ok, err = pcall(removeSpace, sid)
       if not called then return false, ok end
       return ok, err
     end

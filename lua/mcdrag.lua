@@ -8,6 +8,7 @@
 
 local spaces = require("hs.spaces")
 local spaceUtils = require("lua.space_utils")
+local missionControl = require("lua.mission_control")
 local log = require("lua.log")
 
 local M = {}
@@ -47,51 +48,15 @@ local QUICK = { name = "quick", hold = 0.05, step = math.huge }
 local SLOW = { name = "careful", hold = 0.15, step = 40 }
 local STEP_WAIT = 0.008
 
-local function find(el, test, depth)
-  if not el or depth < 0 then return nil end
-  local ok, hit = pcall(test, el)
-  if ok and hit then return el end
-  for _, child in ipairs(el.AXChildren or {}) do
-    local found = find(child, test, depth - 1)
-    if found then return found end
-  end
-  return nil
-end
-
-local function idIs(name)
-  return function(e) return e.AXIdentifier == name end
-end
-
--- The Spaces bar (an AX element) for one screen, or nil and a reason.
-local function spacesBar(screen)
-  local dockApp = hs.application.get("com.apple.dock")
-  if not dockApp then return nil, "Dock not found" end
-  local dock = require("hs.axuielement").applicationElement(dockApp)
-  local mc = find(dock, idIs("mc"), 2)
-  if not mc then return nil, "Mission Control is not open" end
-
-  local display = find(mc, function(e)
-    return e.AXIdentifier == "mc.display" and tonumber(e.AXDisplayID) == screen:id()
-  end, 2)
-  if not display then
-    if #hs.screen.allScreens() > 1 then return nil, "no Mission Control group for this screen" end
-    display = mc
-  end
-
-  local bar = find(display, idIs("mc.spaces.list"), 4)
-  if not bar then return nil, "no Spaces bar" end
-  return bar
-end
+-- The Spaces bar (an AX element) for one screen, or nil and a reason. In
+-- the Dock up to macOS 26, in WindowManager from macOS 27.
+local spacesBar = missionControl.spacesList
 
 -- Thumbnails left to right: { name = ..., frame = { x, y, w, h } }.
 local function thumbnails(screen)
   local bar, err = spacesBar(screen)
   if not bar then return nil, err end
-  local out = {}
-  for _, b in ipairs(bar.AXChildren or {}) do
-    table.insert(out, { name = b.AXDescription or b.AXTitle or "?", frame = b.AXFrame })
-  end
-  return out
+  return missionControl.thumbnails(bar)
 end
 
 local function center(f)
@@ -305,6 +270,9 @@ function M.reorder(screen, wanted, names, opts)
 
     local how, tries = nil, 0
     local timings = opts.slow and { SLOW, SLOW } or { QUICK, SLOW, SLOW }
+    -- macOS 27 picked a quick drag up but never opened the gap (Split
+    -- View); careful drags worked there.
+    if missionControl.inWindowManager and not opts.slow then timings = { SLOW, SLOW, SLOW } end
     local aimInfo = {}
     local started = log.clock()
 
@@ -420,8 +388,10 @@ function M.reorder(screen, wanted, names, opts)
           local was = thumbs[i] and thumbs[i].frame
           if not was or th.name ~= thumbs[i].name or math.abs(th.frame.x - was.x) > 2 then still = false end
         end
-        if still then
-          aimInfo.pickedUp = false
+        -- On macOS 27 also when something moved: there a thumbnail that was
+        -- picked up and let go at an unopened gap made a Split View.
+        if still or missionControl.inWindowManager then
+          if still then aimInfo.pickedUp = false end
           for i = 1, 4 do
             post("leftMouseDragged", { x = at.x + (from.x - at.x) * i / 4, y = from.y })
             hs.timer.usleep(10000)

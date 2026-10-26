@@ -175,6 +175,24 @@ function M.exitFullscreen(application, winId)
     return fullscreenSpaceOf(winId) == nil
   end
 
+  -- macOS 27: a window in Split View says it is not fullscreen, so
+  -- setFullScreen(false) does nothing (seen with Mail next to Brave). Its
+  -- fullscreen button does work: the window gets a fullscreen Space of its
+  -- own (the new Space becomes active), which it then leaves as usual.
+  if not win:isFullScreen() then
+    local ok, button = pcall(function()
+      return hs.axuielement.windowElement(win):attributeValue("AXFullScreenButton")
+    end)
+    if ok and button and button:performAction("AXPress") then
+      log.info(label(application, winId) .. " is in Split View; pressed its fullscreen button")
+      spaceUtils.waitFor(function() return fullscreenSpaceOf(winId) ~= sid end, 3, 0.1)
+      spaceUtils.sleep(SETTLE)
+      local own = fullscreenSpaceOf(winId)
+      if own then spaceUtils.gotoSpaceAndWait(own) end
+      win = waitForWindow(application, winId) or win
+    end
+  end
+
   win:setFullScreen(false)
   local ok = spaceUtils.waitFor(left, 2.5, 0.1)
   if not ok then

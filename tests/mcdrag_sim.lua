@@ -85,18 +85,31 @@ local function element(fields, childrenFn)
   })
 end
 
-local list = element({ AXIdentifier = "mc.spaces.list" }, function()
+-- macOS 27.0 reports a thumbnail's centre as its position.
+local centeredFrames = false
+local list = element({ AXIdentifier = "mc.spaces.list", AXFrame = { x = 0, y = 0, w = 1600, h = 100 } }, function()
   local out = {}
   for i, sid in ipairs(order) do
-    table.insert(out, { AXDescription = names[sid], AXFrame = frameOf(i) })
+    local f = frameOf(i)
+    if centeredFrames then f = { x = f.x + f.w / 2, y = f.y + f.h / 2, w = f.w, h = f.h } end
+    table.insert(out, { AXDescription = names[sid], AXFrame = f })
   end
   return out
 end)
 local display = element({ AXIdentifier = "mc.display", AXDisplayID = 1 }, function()
-  return { element({ AXIdentifier = "mc.spaces" }, function() return { list } end) }
+  return {
+    element({ AXIdentifier = "com.apple.mail.space.1" }), -- a window thumbnail
+    element({ AXIdentifier = "mc.spaces" }, function() return { list } end),
+  }
 end)
-local mc = element({ AXIdentifier = "mc" }, function() return { display } end)
+-- Up to macOS 26 Mission Control's elements are in the Dock. From macOS 27
+-- they are in WindowManager, and the Dock only has an empty "mc" group.
+local layout = "dock"
+local mc = element({ AXIdentifier = "mc" }, function() return layout == "dock" and { display } or {} end)
 local dock = element({}, function() return mcOpen and { mc } or {} end)
+local windowManager = element({}, function()
+  return (mcOpen and layout == "windowmanager") and { display } or {}
+end)
 
 local screen = {
   id = function() return 1 end,
@@ -118,7 +131,11 @@ hs = {
     secondsSinceEpoch = function() return clock end,
   },
   screen = { allScreens = function() return { screen } end, primaryScreen = function() return screen end },
-  application = { get = function(id) return id == "com.apple.dock" and {} or nil end },
+  application = {
+    get = function(id)
+      return (id == "com.apple.dock" or id == "com.apple.WindowManager") and { bundleID = id } or nil
+    end,
+  },
   mouse = {
     absolutePosition = function(p)
       if p then mouse = { x = p.x, y = p.y } end
@@ -236,7 +253,9 @@ hs = {
 }
 package.preload["hs.spaces"] = function() return hs.spaces end
 package.preload["hs.axuielement"] = function()
-  return { applicationElement = function() return dock end }
+  return {
+    applicationElement = function(app) return app.bundleID == "com.apple.dock" and dock or windowManager end,
+  }
 end
 
 local mcdrag = require("lua.mcdrag")
@@ -333,6 +352,18 @@ case("bar opens small: grown by entering it", "b c u o t m e D z", "b c u o z t 
 barMode = "stuck"
 case("bar stays small: gives up without a click", "b c u o t m e D z", "b c u o z t m e D1", "b c u o t m e D z", 0, true)
 barMode = "big"
+
+-- macOS 27: Mission Control in WindowManager. A new desktop goes at the
+-- very end there, after the fullscreen apps.
+layout = "windowmanager"
+centeredFrames = true
+require("lua.mission_control").inWindowManager = true
+case("macOS 27: PhD - Coding of 13:32", "e D c b t u o m k", "b c u o m k e t D1", "b c u o m k e t D", 0, false, false, 0, 1)
+case("macOS 27: new desktop landed at the end", "D a b D", "D1 a D2 b", "D a D b")
+require("lua.mission_control").inWindowManager = false
+centeredFrames = false
+case("macOS 27 layout, found from the Dock side too", "D D a", "D1 a D2", "D a D")
+layout = "dock"
 
 print(failures == 0 and "\nall drag cases pass" or ("\n" .. failures .. " case(s) failed"))
 os.exit(failures == 0 and 0 or 1)

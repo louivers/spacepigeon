@@ -138,18 +138,18 @@ After making changes, click **"Save & Reload Hammerspoon"** to apply them immedi
 
 ## How windows are moved
 
-SpacePigeon ships a small helper, `spacectl` (source in `helper/`, installed to `~/.hammerspoon/bin/spacectl`). It uses a private macOS call to move windows between spaces and a fast swipe trick to switch spaces without opening Mission Control. Both work with System Integrity Protection (SIP) turned on, on **macOS 26.4 and newer**.
+SpacePigeon ships a small helper, `spacectl` (source in `helper/`, installed to `~/.hammerspoon/bin/spacectl`). It uses a private macOS call to move windows between spaces and a fast swipe trick to switch spaces without opening Mission Control. Both work with System Integrity Protection (SIP) turned on, on **macOS 26.4 and newer**. macOS 27 ignores the swipe trick, so there SpacePigeon switches spaces by pressing them in Mission Control, which takes about a fifth of a second.
 
 If the helper is missing or a move does not work, SpacePigeon falls back to the old way: switching spaces through Mission Control, and quitting and reopening an app on the right space as a last resort.
 
-Spaces cannot be moved by any API. macOS puts a new desktop after the last desktop and a new fullscreen app at the very end. So SpacePigeon first gets the right number of desktops, makes the fullscreen apps fullscreen (they land at the end), and then drags each one to its place in the Mission Control Spaces bar. It reads the exact thumbnail positions from Mission Control, so the drags are precise; the mouse moves for a moment and is put back afterwards. You can turn the dragging off in the General tab; fullscreen apps then stay after the last desktop, in order. When everything is already in place, nothing happens.
+Spaces cannot be moved by any API. macOS puts a new desktop after the last desktop (on macOS 27: at the very end) and a new fullscreen app at the very end. So SpacePigeon first gets the right number of desktops, makes the fullscreen apps fullscreen (they land at the end), and then drags each one to its place in the Mission Control Spaces bar. It reads the exact thumbnail positions from Mission Control, so the drags are precise; the mouse moves for a moment and is put back afterwards. You can turn the dragging off in the General tab; fullscreen apps then stay after the last desktop, in order. When everything is already in place, nothing happens.
 
 **Tip:** turn off *System Settings > Desktop & Dock > Automatically rearrange Spaces based on most recent use*, or macOS will shuffle your spaces again.
 
 ### Check that it works on your Mac
 ```bash
 bash scripts/build_helper.sh         # builds build/spacectl
-./build/spacectl check               # "move": true means window moves work
+./build/spacectl check               # "move": true means window moves work, "focus": true the swipe trick
 ./build/spacectl selftest            # moves your Terminal window to another desktop and back
 ```
 `selftest` needs at least two desktops on the screen you run it from.
@@ -163,6 +163,7 @@ The space arranging and the workspace flow have simulation tests that run with p
 lua tests/slots_sim.lua
 lua tests/structure_sim.lua
 lua tests/mcdrag_sim.lua
+lua tests/mission_control_sim.lua
 lua tests/workspace_sim.lua
 lua tests/dragbench_sim.lua
 lua tests/profile_sim.lua

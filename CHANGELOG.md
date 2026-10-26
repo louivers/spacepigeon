@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **macOS 27**: switching spaces, adding and removing desktops, and dragging fullscreen apps into place work again. macOS 27 draws Mission Control in WindowManager instead of the Dock, so Hammerspoon's `hs.spaces` could no longer find it ("no display with specified id found", "no Spaces bar"). SpacePigeon now finds Mission Control in either place and presses its buttons itself on macOS 27.
+- **macOS 27**: the instant space switch (a synthesized Dock swipe) does nothing there. `spacectl check` now reports `"focus": false` on macOS 27 (helper 1.3.0), so SpacePigeon switches through Mission Control right away instead of waiting 2 seconds for each swipe to fail.
+- **macOS 27**: fullscreen apps are dragged into place again. Mission Control there reports each Spaces bar thumbnail's centre as its position, so every drag pressed the corner of a thumbnail and was ignored. SpacePigeon corrects the frames (and notices when a later macOS reports them right), drags carefully, and when Mission Control does not open the gap it lets go over the thumbnail itself instead of next to another app (which made a Split View).
+- **macOS 27**: an app in Split View is taken out again. A window in Split View says it is not fullscreen there, so it is taken out with its fullscreen button.
+- A new desktop on macOS 27 goes after the fullscreen apps; the drags put it in its place.
+- A space switch through Mission Control that does not go through is tried once more.
+
 ## 2.1.0
 
 ### Added
