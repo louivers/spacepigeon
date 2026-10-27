@@ -8,6 +8,10 @@
 
 Effortlessly transition between workflows. SpacePigeon instantly orchestrates your applications, windows, and displays into the perfect environment for any task with a single click or hotkey.
 
+<div align="center">
+  <img src="spacepigeon_demo.gif" alt="SpacePigeon setting up a workspace: apps open, move to their spaces and arrange their windows" width="800"/>
+</div>
+
 ## What's new in 2.2
 
 - **macOS 27**: switching spaces, adding and removing desktops, and dragging fullscreen apps into place work again. macOS 27 moved Mission Control to another process and changed how it reports the Spaces bar, which broke all of these.
