@@ -1,38 +1,45 @@
 # SpacePigeon: Saved Workspaces for macOS
 
-<div align="center">
-  <img src="spacepigeon_screenshot.png" alt="SpacePigeon Screenshot" width="600"/>
-</div>
-
-**SpacePigeon** is a native macOS app (powered by Hammerspoon) that lets you define *workspaces* — which apps open, which desktop spaces they go to, and how windows are arranged.
-
-Effortlessly transition between workflows. SpacePigeon instantly orchestrates your applications, windows, and displays into the perfect environment for any task with a single click or hotkey.
+SpacePigeon remembers which apps you use for a task, which Space and monitor each one goes to, and where its windows sit. One hotkey sets it all up again.
 
 <div align="center">
   <img src="spacepigeon_demo.gif" alt="SpacePigeon setting up a workspace: apps open, move to their spaces and arrange their windows" width="800"/>
 </div>
 
-## What's new in 2.2
+SpacePigeon is a free, open-source Mac app built on [Hammerspoon](https://www.hammerspoon.org/). Apps that are already open are moved to their Space instead of being quit and reopened (macOS 26.4 or newer), and fullscreen apps go in the order you choose in Mission Control. All of this works with System Integrity Protection (SIP) turned on.
 
-- **macOS 27**: switching spaces, adding and removing desktops, and dragging fullscreen apps into place work again. macOS 27 moved Mission Control to another process and changed how it reports the Spaces bar, which broke all of these.
-- On macOS 27 SpacePigeon switches spaces through Mission Control, because macOS 27 ignores the swipe trick it used to switch them instantly. A switch takes about a fifth of a second.
+**[Download the latest release](../../releases/latest)**. It is signed and notarized by Apple, and runs on macOS 12 or newer, on Intel and Apple Silicon.
 
-## What's new in 2.1
+New in 2.2: the app is signed and notarized, works on macOS 27, and installs the current Hammerspoon. Every release is in [CHANGELOG.md](CHANGELOG.md).
 
-- **Several windows of one app**: add an app to a preset more than once, for example two Terminal windows side by side or one Chrome window per profile. Each row gets its own window and keeps it when you set the preset up again. See [Several windows of one app](#several-windows-of-one-app).
-- **Save the current layout**: turn the windows you have open right now into a new preset, with the 📷 button in the config editor or **Save Current Layout as Preset…** in the menu bar.
-- **Custom position**: put a window on any part of the screen, set in percent.
+## Install
 
-## What's new in 2.0
+1. Download `SpacePigeon.zip` from the [latest release](../../releases/latest) and unzip it.
+2. Open **SpacePigeon.app**. macOS asks once whether to open an app downloaded from the internet. Click **Open**.
+3. Click **Install & Reload**. If you don't have Hammerspoon, SpacePigeon downloads it to `~/Applications`.
+4. Hammerspoon needs Accessibility access to move windows. Allow it when macOS asks, or in **System Settings → Privacy & Security → Accessibility**.
+5. Click **Edit Config** to make your first preset. You can also choose **Save Current Layout as Preset…** in the 🐦 menu in the menu bar, which turns the windows you have open right now into a preset.
 
-- **No more quitting**: apps that are already open are moved to their space instead of being closed and reopened, using the new `spacectl` helper (macOS 26.4+, SIP stays on).
-- **Native fullscreen**: put fullscreen apps exactly where you want them in the Mission Control bar.
-- **More positions**: halves, thirds, two-thirds, quarters and center.
-- **Up to 10 monitors**, **modes per monitor count**, an optional rearrange when a monitor is plugged in or out, and **Focus When Done**.
-- **Save before quitting**, a **menu bar** preset picker, and a **log viewer** for every run.
-- **App picker** with your installed apps, and **drag and drop** to reorder apps.
+Already use SpacePigeon? Do the same steps. Your presets are kept, and configs from 1.x keep working.
 
-See [CHANGELOG.md](CHANGELOG.md) for the full list. Configs from 1.x keep working.
+Releases before 2.2.1 were not signed. To open one of those, click **Open Anyway** in **System Settings → Privacy & Security** after the warning.
+
+### Build from source
+If you prefer to build it yourself:
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/louivers/spacepigeon.git
+   cd spacepigeon
+   ```
+2. Run the build script:
+   ```bash
+   ./scripts/build_app.sh
+   ```
+3. Open the generated app:
+   ```bash
+   open SpacePigeon.app
+   ```
 
 ## Features
 
@@ -56,37 +63,13 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list. Configs from 1.x keep workin
 - 💾 **Save before quitting**: Presses Cmd+S in the apps you choose before quitting them.
 - 📑 **Presets**: Create multiple workspace states (e.g., "Work", "Chill", "Stream") and switch between them.
 
-## Installation
-
-### Option 1: Download App (Recommended)
-1. Go to the **[Releases](../../releases)** page.
-2. Download `SpacePigeon.zip`.
-3. Unzip the file.
-4. Run **SpacePigeon.app**. macOS asks once whether to open an app downloaded from the internet. Click **Open**.
-5. Click **"Install & Reload"**.
-
-The app is signed with a Developer ID and notarized by Apple, so it opens without an "unidentified developer" warning. Releases before 2.2.1 were not signed. To open one of those, click **Open Anyway** in **System Settings → Privacy & Security** after the warning.
-
-### Option 2: Build from Source
-If you prefer to build it yourself:
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/louivers/spacepigeon.git
-   cd spacepigeon
-   ```
-2. Run the build script:
-   ```bash
-   ./scripts/build_app.sh
-   ```
-3. Open the generated app:
-   ```bash
-   open SpacePigeon.app
-   ```
-
 ## Configuration
 
 Launch SpacePigeon and click **"Edit Config"** to open the configuration editor.
+
+<div align="center">
+  <img src="spacepigeon_screenshot.png" alt="The SpacePigeon config editor" width="600"/>
+</div>
 
 ### Presets Tab
 Manage your workspace layouts here.
