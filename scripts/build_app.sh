@@ -11,6 +11,25 @@ CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
+# 0. Pick how to sign: the first Developer ID in the keychain, else ad-hoc.
+# --notarize also sends the app to Apple and staples the ticket to it. It uses
+# the notarytool profile in NOTARY_PROFILE (default "spacepigeon").
+NOTARIZE=0
+[ "$1" = "--notarize" ] && NOTARIZE=1
+NOTARY_PROFILE="${NOTARY_PROFILE:-spacepigeon}"
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="$(security find-identity -v -p codesigning | grep -o -m1 '"Developer ID Application: [^"]*"' | tr -d '"')"
+fi
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+if [ "$NOTARIZE" = 1 ] && [ "$SIGN_IDENTITY" = "-" ]; then
+    echo "❌ --notarize needs a Developer ID Application certificate in the keychain." >&2
+    exit 1
+fi
+# Notarization needs a secure timestamp, which needs a network connection, so
+# local builds leave it out and also work offline.
+if [ "$NOTARIZE" = 1 ]; then SIGN_TIMESTAMP="--timestamp"; else SIGN_TIMESTAMP="--timestamp=none"; fi
+export SIGN_IDENTITY SIGN_TIMESTAMP
+
 echo "🚧 Building $APP_NAME.app..."
 
 # 1. Create Directory Structure
@@ -62,6 +81,8 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <string>$MIN_MACOS</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>SpacePigeon asks Hammerspoon to reload after you save your workspaces.</string>
 </dict>
 </plist>
 EOF
@@ -87,12 +108,25 @@ mkdir -p "$RESOURCES/lua"
 cp "$PROJECT_ROOT/init.lua" "$RESOURCES/"
 cp "$PROJECT_ROOT/lua/"*.lua "$RESOURCES/lua/"
 
-# 6. Ad-Hoc Signing
-echo "✍️  Signing app"
+# 6. Signing
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    echo "✍️  Signing app (ad-hoc, no Developer ID in the keychain)"
+else
+    echo "✍️  Signing app as $SIGN_IDENTITY"
+fi
 xattr -cr "$APP_DIR"
 # Sign the whole bundle, not just the executable, so macOS sees a complete,
 # valid app (the helper in Resources/bin is already signed by build_helper.sh).
-codesign --force --sign - "$APP_DIR"
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    codesign --force --sign - "$APP_DIR"
+else
+    # The hardened runtime is required for notarization. It blocks Apple
+    # Events unless the entitlements allow them, and the app uses AppleScript
+    # to ask Hammerspoon to reload.
+    codesign --force --options runtime "$SIGN_TIMESTAMP" \
+        --entitlements "$PROJECT_ROOT/swift/SpacePigeon.entitlements" \
+        --sign "$SIGN_IDENTITY" "$APP_DIR"
+fi
 
 # Tell Launch Services and Spotlight about the app, so launchers like
 # Raycast and Spotlight list it.
@@ -105,7 +139,30 @@ fi
 
 # 7. Zip for distribution
 echo "🤐 Zipping into ${APP_NAME}.zip..."
-rm -f "$PROJECT_ROOT/${APP_NAME}.zip"
-ditto -c -k --keepParent "$APP_DIR" "$PROJECT_ROOT/${APP_NAME}.zip"
+ZIP="$PROJECT_ROOT/${APP_NAME}.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP_DIR" "$ZIP"
+
+# 8. Notarize (only with --notarize). Apple checks the zip, the ticket is
+# stapled to the app so Gatekeeper accepts it offline too, and the app is
+# zipped again with the ticket in it.
+if [ "$NOTARIZE" = 1 ]; then
+    echo "📮 Notarizing (usually takes a few minutes)..."
+    RESULT="$(mktemp)"
+    xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$RESULT"
+    STATUS="$(plutil -extract status raw -o - "$RESULT")"
+    if [ "$STATUS" != "Accepted" ]; then
+        echo "❌ Notarization status: $STATUS. Apple's log:" >&2
+        xcrun notarytool log "$(plutil -extract id raw -o - "$RESULT")" --keychain-profile "$NOTARY_PROFILE" >&2 || true
+        rm -f "$RESULT"
+        exit 1
+    fi
+    rm -f "$RESULT"
+    xcrun stapler staple "$APP_DIR"
+    rm -f "$ZIP"
+    ditto -c -k --keepParent "$APP_DIR" "$ZIP"
+    spctl --assess --type execute "$APP_DIR"
+    echo "🛂 Notarized, and Gatekeeper accepts the app"
+fi
 
 echo "✅ Done! You can now distribute ${APP_NAME}.zip"

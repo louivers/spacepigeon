@@ -62,20 +62,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list. Configs from 1.x keep workin
 1. Go to the **[Releases](../../releases)** page.
 2. Download `SpacePigeon.zip`.
 3. Unzip the file.
-4. Run **SpacePigeon.app**.
+4. Run **SpacePigeon.app**. macOS asks once whether to open an app downloaded from the internet. Click **Open**.
 5. Click **"Install & Reload"**.
 
-### "Unidentified Developer" Warning?
-If macOS prevents the app from opening because it "cannot be verified":
-
-1. Click **Done** (or Cancel) on the warning dialog.
-2. Open **System Settings**.
-3. Go to **Privacy & Security**.
-4. Scroll down to the **Security** section.
-5. Click the **Open Anyway** button next to *"SpacePigeon.app was blocked..."*.
-6. Click **Open** in the final confirmation.
-
-*(This is required because the app is open-source and not signed with a paid Apple Developer certificate).*
+The app is signed with a Developer ID and notarized by Apple, so it opens without an "unidentified developer" warning. Releases before 2.2.1 were not signed. To open one of those, click **Open Anyway** in **System Settings → Privacy & Security** after the warning.
 
 ### Option 2: Build from Source
 If you prefer to build it yourself:

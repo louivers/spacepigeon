@@ -16,6 +16,7 @@ A profile has its own presets, generated config and log in `~/.hammerspoon/space
 
 ```bash
 bash scripts/build_app.sh             # build the app from this checkout
+bash scripts/build_app.sh --notarize  # signed, notarized and stapled, for a release
 scripts/profile.sh demo               # sample presets, for screenshots and recordings
 scripts/profile.sh fresh --reset      # the default config a new user starts with
 scripts/profile.sh status             # which profile Hammerspoon loads

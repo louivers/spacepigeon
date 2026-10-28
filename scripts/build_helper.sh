@@ -22,5 +22,12 @@ clang -O2 -Wall -fno-objc-arc \
   -framework AppKit -framework ApplicationServices \
   -Wl,-undefined,dynamic_lookup
 
-codesign --force --sign - "$OUT"
+# Ad-hoc signed unless build_app.sh passes a Developer ID in SIGN_IDENTITY.
+# Notarization also needs the hardened runtime and a secure timestamp.
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+if [ "$SIGN_IDENTITY" = "-" ]; then
+  codesign --force --sign - "$OUT"
+else
+  codesign --force --options runtime "${SIGN_TIMESTAMP:---timestamp=none}" --sign "$SIGN_IDENTITY" "$OUT"
+fi
 echo "Built $OUT"
