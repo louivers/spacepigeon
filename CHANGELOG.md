@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.2
+
+### Fixed
+- **Hammerspoon download**: when Hammerspoon is missing, SpacePigeon downloads the current release, 1.1.1, instead of 0.9.100 from 2023. On macOS 12, which 1.1.1 does not support, it downloads 1.0.0, the last release that runs there. A Hammerspoon you already have is left alone.
+
 ## 2.2.1
 
 ### Changed

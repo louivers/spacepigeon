@@ -76,7 +76,7 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.2.1</string>
+    <string>2.2.2</string>
     <key>LSMinimumSystemVersion</key>
     <string>$MIN_MACOS</string>
     <key>CFBundleIconFile</key>
