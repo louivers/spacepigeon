@@ -145,9 +145,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionTaskDelegate {
         completionHandler(request)
     }
 
+    /// The Hammerspoon release to download when it is missing. 1.1.1 needs
+    /// macOS 13; 1.0.0 is the last release that runs on macOS 12.
+    static var hammerspoonVersion: String {
+        let macOS13 = OperatingSystemVersion(majorVersion: 13, minorVersion: 0, patchVersion: 0)
+        return ProcessInfo.processInfo.isOperatingSystemAtLeast(macOS13) ? "1.1.1" : "1.0.0"
+    }
+
     func downloadAndInstallHammerspoon(statusUpdater: @escaping (String) -> Void) -> (Bool, String?) {
         statusUpdater("Downloading Hammerspoon...")
-        guard let url = URL(string: "https://github.com/Hammerspoon/hammerspoon/releases/download/0.9.100/Hammerspoon-0.9.100.zip") else {
+        let version = AppDelegate.hammerspoonVersion
+        guard let url = URL(string: "https://github.com/Hammerspoon/hammerspoon/releases/download/\(version)/Hammerspoon-\(version).zip") else {
             return (false, "Invalid URL")
         }
 
