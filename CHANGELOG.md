@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.2.1
+
+### Changed
+- **Signed and notarized**: the app and the `spacectl` helper are signed with a Developer ID and notarized by Apple, so macOS opens SpacePigeon without the "unidentified developer" warning and the trip to Privacy & Security. `scripts/build_app.sh --notarize` builds a release this way. Without a Developer ID in the keychain, the build is ad-hoc signed as before.
+- The first time you open this version, macOS asks again whether SpacePigeon may control Hammerspoon, because the app has a new signature. Later updates keep the permission.
+
+### Fixed
+- **macOS 27**: a fullscreen app is no longer opened by accident while it is dragged into place. macOS 27 often does not pick up the first drag of a Space that just became fullscreen, and letting go over its thumbnail could count as a click. SpacePigeon now lets go on the empty part of the Spaces bar and tries again, and opens Mission Control again up to 3 times instead of once.
+- **macOS 27**: a window gets its size and position even when macOS switches to a fullscreen app's Space by itself while SpacePigeon waits for the window. Each try now goes back to the right desktop first. Before, the window kept its size and the next URL could open in the wrong window.
+- The warning for a window SpacePigeon cannot reach says which Space is showing and which of the app's windows it can see.
+
+### Other
+- The demo profile (`scripts/profile.sh demo`) has a Showcase preset that shows most features in one run.
+
 ## 2.2.0
 
 ### Fixed
