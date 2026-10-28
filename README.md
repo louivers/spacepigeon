@@ -3,7 +3,7 @@
 SpacePigeon remembers which apps you use for a task, which Space and monitor each one goes to, and where its windows sit. One hotkey sets it all up again.
 
 <div align="center">
-  <img src="spacepigeon_demo.gif" alt="SpacePigeon setting up a workspace: apps open, move to their spaces and arrange their windows" width="800"/>
+  <img src="spacepigeon_screenshot.png" alt="The SpacePigeon config editor" width="600"/>
 </div>
 
 SpacePigeon is a free, open-source Mac app built on [Hammerspoon](https://www.hammerspoon.org/). Apps that are already open are moved to their Space instead of being quit and reopened (macOS 26.4 or newer), and fullscreen apps go in the order you choose in Mission Control. All of this works with System Integrity Protection (SIP) turned on.
@@ -66,10 +66,6 @@ If you prefer to build it yourself:
 ## Configuration
 
 Launch SpacePigeon and click **"Edit Config"** to open the configuration editor.
-
-<div align="center">
-  <img src="spacepigeon_screenshot.png" alt="The SpacePigeon config editor" width="600"/>
-</div>
 
 ### Presets Tab
 Manage your workspace layouts here.
